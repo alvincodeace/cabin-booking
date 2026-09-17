@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { User, CabinAvailability, Cabin, TimeSlot } from '../types';
+import type { User, CabinAvailability, Cabin } from '../types';
 import { getCabinAvailability, getSettings } from '../api/appsScript';
 import { CabinCard } from '../components/CabinCard';
 import { BookingModal } from '../components/BookingModal';
@@ -43,12 +43,14 @@ export function Dashboard({ user }: DashboardProps) {
   const today = todayInKolkata();
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [maxDate, setMaxDate] = useState<string>(addDays(today, 30));
+  const [maxDurationMinutes, setMaxDurationMinutes] = useState(60);
   const [availability, setAvailability] = useState<CabinAvailability[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<{
+  const [bookingRange, setBookingRange] = useState<{
     cabin: Cabin;
-    slot: TimeSlot;
+    startTime: string;
+    endTime: string;
   } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -57,6 +59,7 @@ export function Dashboard({ user }: DashboardProps) {
       try {
         const settings = await getSettings();
         setMaxDate(addDays(todayInKolkata(), settings.advanceBookingDays || 30));
+        setMaxDurationMinutes(settings.maxBookingDurationMinutes || 60);
       } catch {
         setMaxDate(addDays(todayInKolkata(), 30));
       }
@@ -108,12 +111,12 @@ export function Dashboard({ user }: DashboardProps) {
     setSelectedDate(value);
   };
 
-  const handleSlotClick = (cabin: Cabin, slot: TimeSlot) => {
-    setSelectedSlot({ cabin, slot });
+  const handleBookRange = (cabin: Cabin, startTime: string, endTime: string) => {
+    setBookingRange({ cabin, startTime, endTime });
   };
 
   const handleBookingSuccess = () => {
-    setSelectedSlot(null);
+    setBookingRange(null);
     setRefreshKey((prev) => prev + 1);
   };
 
@@ -167,7 +170,10 @@ export function Dashboard({ user }: DashboardProps) {
           <span className="h-2.5 w-2.5 rounded-full bg-stone-300" /> Booked
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-400" /> Held
+          <span className="h-2.5 w-2.5 rounded-full bg-teal-800" /> Selected
+        </span>
+        <span className="text-stone-400">
+          Click adjacent times to book a longer slot
         </span>
         <button onClick={() => loadAvailability()} className="ml-auto btn-ghost text-xs">
           Refresh
@@ -194,30 +200,24 @@ export function Dashboard({ user }: DashboardProps) {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {availability.map((item) => (
             <CabinCard
-              key={item.cabin.cabinId}
+              key={`${item.cabin.cabinId}-${selectedDate}`}
               cabin={item.cabin}
               slots={item.slots}
               user={user}
-              onSlotClick={handleSlotClick}
+              maxDurationMinutes={maxDurationMinutes}
+              onBookRange={handleBookRange}
             />
           ))}
         </div>
       )}
 
-      {selectedSlot && (
+      {bookingRange && (
         <BookingModal
-          cabin={selectedSlot.cabin}
+          cabin={bookingRange.cabin}
           date={selectedDate}
-          startTime={selectedSlot.slot.time}
-          endTime={
-            selectedSlot.slot.endTime ||
-            (() => {
-              const [hours, minutes] = selectedSlot.slot.time.split(':').map(Number);
-              const total = hours * 60 + minutes + 30;
-              return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-            })()
-          }
-          onClose={() => setSelectedSlot(null)}
+          startTime={bookingRange.startTime}
+          endTime={bookingRange.endTime}
+          onClose={() => setBookingRange(null)}
           onSuccess={handleBookingSuccess}
           organizerEmail={user.email}
         />
