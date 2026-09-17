@@ -88,7 +88,7 @@ function AppContent() {
             Cabin Booking
           </h1>
           <p className="mt-2 text-sm text-stone-500 leading-relaxed">
-            Book a meeting cabin with your CodeAce Google account.
+            Sign in with Google to book a meeting cabin.
           </p>
 
           {error && (
@@ -123,7 +123,7 @@ function AppContent() {
           </button>
 
           <p className="mt-4 text-xs text-stone-400">
-            Only @codeace.com accounts can sign in
+            Use your work Google account
           </p>
         </div>
       </div>
