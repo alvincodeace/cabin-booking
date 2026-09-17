@@ -51,21 +51,7 @@ function getFriendlyErrorMessage(error: unknown): string {
   return message;
 }
 
-function toQueryValue(value: unknown): string | null {
-  if (value === undefined || value === null || value === '') {
-    return null;
-  }
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  return String(value);
-}
-
-async function apiCall<T>(
-  action: string,
-  params?: object,
-  method: 'GET' | 'POST' = 'GET'
-): Promise<T> {
+async function apiCall<T>(action: string, params?: object): Promise<T> {
   const token = getStoredAccessToken();
   const payload: Record<string, unknown> = {
     action,
@@ -77,33 +63,13 @@ async function apiCall<T>(
   }
 
   try {
-    let response: Response;
-
-    if (method === 'GET') {
-      const queryParams = new URLSearchParams();
-      Object.entries(payload).forEach(([key, value]) => {
-        const serialized = toQueryValue(value);
-        if (serialized !== null) {
-          queryParams.set(key, serialized);
-        }
-      });
-
-      // Simple GET with no custom headers — Apps Script cannot handle CORS preflight.
-      response = await fetch(`${API_URL}?${queryParams.toString()}`, {
-        method: 'GET',
-        redirect: 'follow',
-      });
-    } else {
-      // text/plain avoids a CORS preflight; Apps Script still receives the JSON body.
-      response = await fetch(API_URL, {
-        method: 'POST',
-        redirect: 'follow',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify(payload),
-      });
-    }
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
 
     const text = await response.text();
     let result: ApiResponse<T>;
@@ -152,25 +118,25 @@ export async function getMyBookings(): Promise<Booking[]> {
 export async function createLock(
   request: CreateLockRequest
 ): Promise<CreateLockResponse> {
-  return apiCall<CreateLockResponse>('createLock', request, 'POST');
+  return apiCall<CreateLockResponse>('createLock', request);
 }
 
 export async function refreshLock(lockId: string): Promise<{ expiresAt: string }> {
-  return apiCall<{ expiresAt: string }>('refreshLock', { lockId }, 'POST');
+  return apiCall<{ expiresAt: string }>('refreshLock', { lockId });
 }
 
 export async function confirmBooking(
   request: ConfirmBookingRequest
 ): Promise<Booking> {
-  return apiCall<Booking>('confirmBooking', request, 'POST');
+  return apiCall<Booking>('confirmBooking', request);
 }
 
 export async function cancelLock(lockId: string): Promise<void> {
-  return apiCall<void>('cancelLock', { lockId }, 'POST');
+  return apiCall<void>('cancelLock', { lockId });
 }
 
 export async function cancelBooking(bookingId: string): Promise<void> {
-  return apiCall<void>('cancelBooking', { bookingId }, 'POST');
+  return apiCall<void>('cancelBooking', { bookingId });
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -187,18 +153,18 @@ export async function getAllBookings(filters?: {
 }
 
 export async function createCabin(cabin: Omit<Cabin, 'cabinId' | 'createdAt'>): Promise<Cabin> {
-  return apiCall<Cabin>('createCabin', cabin, 'POST');
+  return apiCall<Cabin>('createCabin', cabin);
 }
 
 export async function updateCabin(cabin: Cabin): Promise<Cabin> {
-  return apiCall<Cabin>('updateCabin', cabin, 'POST');
+  return apiCall<Cabin>('updateCabin', cabin);
 }
 
 export async function updateCabinStatus(
   cabinId: string,
   status: 'ACTIVE' | 'INACTIVE'
 ): Promise<void> {
-  return apiCall<void>('updateCabinStatus', { cabinId, status }, 'POST');
+  return apiCall<void>('updateCabinStatus', { cabinId, status });
 }
 
 export async function getAllUsers(): Promise<User[]> {
@@ -206,22 +172,22 @@ export async function getAllUsers(): Promise<User[]> {
 }
 
 export async function createUser(user: Omit<User, 'createdAt'>): Promise<User> {
-  return apiCall<User>('createUser', user, 'POST');
+  return apiCall<User>('createUser', user);
 }
 
 export async function updateUser(user: User): Promise<User> {
-  return apiCall<User>('updateUser', user, 'POST');
+  return apiCall<User>('updateUser', user);
 }
 
 export async function updateUserStatus(
   email: string,
   active: boolean
 ): Promise<void> {
-  return apiCall<void>('updateUserStatus', { email, active }, 'POST');
+  return apiCall<void>('updateUserStatus', { email, active });
 }
 
 export async function updateSettings(settings: Settings): Promise<Settings> {
-  return apiCall<Settings>('updateSettings', settings, 'POST');
+  return apiCall<Settings>('updateSettings', settings);
 }
 
 export async function getActiveLocks(): Promise<number> {
