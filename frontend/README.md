@@ -1,32 +1,63 @@
-# React + TypeScript + Vite
+# Cabin Booking System - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Production-ready React application for the Cabin Booking System.
 
-Currently, two official plugins are available:
+## Version
+**v1.0.0** - Production Release
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Quick Start
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+### Development
+```bash
+npm install
+cp .env.example .env
+# Edit .env and add your VITE_APPS_SCRIPT_URL
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+### Production Build
+```bash
+npm run build
+# Output: dist/ folder
+```
+
+## Environment Variables
+
+Create a `.env` file:
+```
+VITE_APPS_SCRIPT_URL=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
+```
+
+## Deployment
+
+### Vercel
+1. Connect GitHub repository
+2. Set Root Directory: `frontend`
+3. Set Build Command: `npm run build`
+4. Set Output Directory: `dist`
+5. Add environment variable: `VITE_APPS_SCRIPT_URL`
+
+### Cloudflare Pages
+1. Connect GitHub repository
+2. Set Root Directory: `frontend`
+3. Set Build Command: `npm run build`
+4. Set Build Output Directory: `dist`
+5. Add environment variable: `VITE_APPS_SCRIPT_URL`
+
+## Tech Stack
+- React 18
+- TypeScript
+- Vite
+- Tailwind CSS
+- React Router
+
+## Features
+✅ Real-time cabin availability  
+✅ Booking with temporary locks  
+✅ Role-based access control  
+✅ Admin dashboard  
+✅ Responsive design  
+
+---
+
+**Last Updated**: v1.0.0 (September 2026)
