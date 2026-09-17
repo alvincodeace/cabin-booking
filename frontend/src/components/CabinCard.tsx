@@ -8,7 +8,8 @@ interface CabinCardProps {
 }
 
 export function CabinCard({ cabin, slots, user, onSlotClick }: CabinCardProps) {
-  const canBook = user.role === 'ADMIN' || user.role === 'TEAM_LEAD';
+  // All authenticated users can book
+  const canBook = true;
 
   const getSlotClassName = (slot: TimeSlot) => {
     const baseClasses = 'px-3 py-2 rounded-lg text-sm font-medium transition-colors';
@@ -121,13 +122,7 @@ export function CabinCard({ cabin, slots, user, onSlotClick }: CabinCardProps) {
         ))}
       </div>
 
-      {!canBook && slots.some((s) => s.status === 'AVAILABLE') && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-xs text-blue-700">
-            Only Team Leads and Admins can create bookings
-          </p>
-        </div>
-      )}
+      {/* All users can book - message removed */}
     </div>
   );
 }

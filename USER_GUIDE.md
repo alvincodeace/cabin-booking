@@ -63,7 +63,7 @@ The availability automatically refreshes every minute to show the latest booking
 
 ## Creating a Booking
 
-> **Note**: Only Team Leads and Admins can create bookings. Regular employees have view-only access.
+> **Note**: All company employees can create bookings once they are added to the system.
 
 ### Step 1: Select a Time Slot
 
