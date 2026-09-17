@@ -22,11 +22,11 @@ export function MyBookings({ user }: MyBookingsProps) {
 
     try {
       const data = await getMyBookings();
-      // Sort by date and time, most recent first
-      const sorted = data.sort((a, b) => {
-        const dateCompare = b.date.localeCompare(a.date);
+      const list = Array.isArray(data) ? data : [];
+      const sorted = [...list].sort((a, b) => {
+        const dateCompare = String(b.date || '').localeCompare(String(a.date || ''));
         if (dateCompare !== 0) return dateCompare;
-        return b.startTime.localeCompare(a.startTime);
+        return String(b.startTime || '').localeCompare(String(a.startTime || ''));
       });
       setBookings(sorted);
     } catch (err: any) {

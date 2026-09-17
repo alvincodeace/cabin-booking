@@ -178,12 +178,34 @@ async function withAttendees(supabase, bookings) {
   }));
 }
 
+function errorMessage(error) {
+  if (!error) return 'Server error';
+  if (typeof error === 'string') return error;
+  if (typeof error.message === 'string' && error.message) return error.message;
+  return 'Server error';
+}
+
+function isMissingRelation(error) {
+  const code = error?.code;
+  const message = errorMessage(error).toLowerCase();
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('does not exist') ||
+    message.includes('could not find the table') ||
+    message.includes('schema cache')
+  );
+}
+
 async function createNotifications(supabase, rows) {
   if (!rows.length) {
     return;
   }
   const { error } = await supabase.from('notifications').insert(rows);
-  if (error) throw error;
+  if (error && !isMissingRelation(error)) throw error;
+  if (error) {
+    console.error('Notifications table missing:', errorMessage(error));
+  }
 }
 
 async function lookupSlackUserId(email) {
@@ -539,7 +561,9 @@ export async function handleBookingApi(req, res) {
           .from('booking_attendees')
           .select('booking_id')
           .eq('user_email', user.email);
-        if (attendeeError) throw attendeeError;
+        if (attendeeError && !isMissingRelation(attendeeError)) {
+          throw attendeeError;
+        }
 
         const invitedIds = (attendeeRows || [])
           .map((row) => row.booking_id)
@@ -553,7 +577,7 @@ export async function handleBookingApi(req, res) {
         }
 
         const merged = [...(ownRows || []), ...invitedRows].map(mapBooking);
-        return ok(res, await withAttendees(supabase, merged));
+        return ok(res, sortBookings(await withAttendees(supabase, merged)));
       }
 
       case 'allBookings': {
@@ -596,7 +620,7 @@ export async function handleBookingApi(req, res) {
           .eq('user_email', user.email)
           .order('created_at', { ascending: false })
           .limit(50);
-        if (error) throw error;
+        if (error && !isMissingRelation(error)) throw error;
         return ok(res, (data || []).map(mapNotification));
       }
 
@@ -609,7 +633,7 @@ export async function handleBookingApi(req, res) {
           query = query.eq('read', false);
         }
         const { error } = await query;
-        if (error) throw error;
+        if (error && !isMissingRelation(error)) throw error;
         return ok(res, null);
       }
 
@@ -755,7 +779,9 @@ export async function handleBookingApi(req, res) {
                 name: attendee.name,
               }))
             );
-            if (attendeeInsertError) throw attendeeInsertError;
+            if (attendeeInsertError && !isMissingRelation(attendeeInsertError)) {
+              throw attendeeInsertError;
+            }
 
             await createNotifications(
               supabase,
@@ -1064,6 +1090,6 @@ export async function handleBookingApi(req, res) {
     }
   } catch (error) {
     console.error('Booking API error:', error);
-    return fail(res, 'SERVER_ERROR', error instanceof Error ? error.message : 'Server error');
+    return fail(res, 'SERVER_ERROR', errorMessage(error));
   }
 }
