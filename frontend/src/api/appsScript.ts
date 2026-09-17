@@ -181,6 +181,14 @@ export async function createUsers(
   return apiCall('createUsers', { users });
 }
 
+export async function importSlackUsers(): Promise<{
+  created: User[];
+  skipped: { email: string; reason: string }[];
+  errors: { email: string; message: string }[];
+}> {
+  return apiCall('importSlackUsers');
+}
+
 export async function updateUser(user: User): Promise<User> {
   return apiCall<User>('updateUser', user);
 }

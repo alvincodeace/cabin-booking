@@ -14,6 +14,7 @@ import {
   updateSettings,
   createUser,
   createUsers,
+  importSlackUsers,
 } from '../api/appsScript';
 import { BookingList } from '../components/BookingList';
 
@@ -157,6 +158,7 @@ export function Admin({ user }: AdminProps) {
   const [bulkUsersText, setBulkUsersText] = useState('');
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [isSavingBulkUsers, setIsSavingBulkUsers] = useState(false);
+  const [isImportingSlack, setIsImportingSlack] = useState(false);
   const [cabinForm, setCabinForm] = useState({
     cabinId: '',
     cabinName: '',
@@ -393,6 +395,25 @@ export function Admin({ user }: AdminProps) {
       setUserFormError(err instanceof Error ? err.message : 'Failed to import users');
     } finally {
       setIsSavingBulkUsers(false);
+    }
+  };
+
+  const handleImportFromSlack = async () => {
+    setUserFormError(null);
+    setBulkResult(null);
+    setIsImportingSlack(true);
+    try {
+      const result = await importSlackUsers();
+      const parts = [`Added ${result.created.length} from Slack`];
+      if (result.skipped.length) {
+        parts.push(`skipped ${result.skipped.length} already in the app`);
+      }
+      setBulkResult(parts.join(', '));
+      loadData();
+    } catch (err: unknown) {
+      setUserFormError(err instanceof Error ? err.message : 'Failed to import from Slack');
+    } finally {
+      setIsImportingSlack(false);
     }
   };
 
@@ -658,10 +679,21 @@ export function Admin({ user }: AdminProps) {
           {activeTab === 'users' && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Users</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  Add employees here so they can be invited to meetings even if they never log in.
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">Users</h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Add employees here so they can be invited to meetings even if they never log in.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleImportFromSlack}
+                    disabled={isImportingSlack}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {isImportingSlack ? 'Importing from Slack...' : 'Import from Slack'}
+                  </button>
+                </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-5">
                   <input
                     value={newUser.name}

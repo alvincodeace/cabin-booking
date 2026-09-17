@@ -303,6 +303,212 @@ async function notifySlack(booking, attendees, action = 'booked', skipEmails = [
   }
 }
 
+function headerValue(headers, name) {
+  if (!headers) return '';
+  const direct = headers[name];
+  if (direct) return Array.isArray(direct) ? direct[0] : direct;
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (String(key).toLowerCase() === lower) {
+      return Array.isArray(value) ? value[0] : value;
+    }
+  }
+  return '';
+}
+
+function safeEqual(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string' || left.length !== right.length) {
+    return false;
+  }
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return mismatch === 0;
+}
+
+async function hmacSha256Hex(secret, value) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(value));
+  return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifySlackSignature(headers, rawBody) {
+  const secret = process.env.SLACK_SIGNING_SECRET;
+  if (!secret) {
+    console.error('SLACK_SIGNING_SECRET is not configured');
+    return false;
+  }
+  const timestamp = String(headerValue(headers, 'x-slack-request-timestamp') || '');
+  const signature = String(headerValue(headers, 'x-slack-signature') || '');
+  if (!timestamp || !signature) {
+    return false;
+  }
+  const ageSeconds = Math.abs(Date.now() / 1000 - Number(timestamp));
+  if (!Number.isFinite(ageSeconds) || ageSeconds > 60 * 5) {
+    return false;
+  }
+  const digest = `v0=${await hmacSha256Hex(secret, `v0:${timestamp}:${rawBody}`)}`;
+  return safeEqual(digest, signature);
+}
+
+function slackMemberToUser(member) {
+  if (
+    !member ||
+    member.deleted ||
+    member.is_bot ||
+    member.is_app_user ||
+    member.is_restricted ||
+    member.is_ultra_restricted ||
+    member.id === 'USLACKBOT'
+  ) {
+    return null;
+  }
+  const email = String(member.profile?.email || '').trim().toLowerCase();
+  const name = String(member.profile?.real_name || member.real_name || member.profile?.display_name || '').trim();
+  const normalized = normalizeUserInput({
+    email,
+    name,
+    department: '',
+    employeeId: '',
+    role: 'EMPLOYEE',
+  });
+  return normalized.ok ? normalized.user : null;
+}
+
+async function slackApi(path, token) {
+  const response = await fetch(`https://slack.com/api/${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+function slackApiError(error) {
+  if (error === 'missing_scope' || error === 'invalid_scope') {
+    return 'Slack bot needs users:read and users:read.email';
+  }
+  if (error === 'not_authed' || error === 'invalid_auth') {
+    return 'Slack bot token is missing or invalid';
+  }
+  return `Slack request failed: ${error || 'unknown error'}`;
+}
+
+async function fetchSlackUser(userId) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token || !userId) {
+    return null;
+  }
+  const data = await slackApi(`users.info?user=${encodeURIComponent(userId)}`, token);
+  if (!data.ok) {
+    console.error('Slack users.info failed:', data.error, userId);
+    return null;
+  }
+  return data.user || null;
+}
+
+async function fetchSlackMembers() {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
+    throw new Error('SLACK_BOT_TOKEN is not configured');
+  }
+  const members = [];
+  let cursor = '';
+  do {
+    const query = new URLSearchParams({ limit: '200' });
+    if (cursor) {
+      query.set('cursor', cursor);
+    }
+    const data = await slackApi(`users.list?${query.toString()}`, token);
+    if (!data.ok) {
+      throw new Error(slackApiError(data.error));
+    }
+    members.push(...(data.members || []));
+    cursor = data.response_metadata?.next_cursor || '';
+  } while (cursor);
+  return members;
+}
+
+async function insertNewUsers(supabase, prepared) {
+  const skipped = [];
+  const created = [];
+  if (!prepared.length) {
+    return { created, skipped };
+  }
+  const existingEmails = new Set();
+  for (let index = 0; index < prepared.length; index += 100) {
+    const emails = prepared.slice(index, index + 100).map((row) => row.email);
+    const { data, error } = await supabase.from('users').select('email').in('email', emails);
+    if (error) throw error;
+    for (const row of data || []) {
+      existingEmails.add(row.email);
+    }
+  }
+  const toInsert = [];
+  for (const row of prepared) {
+    if (existingEmails.has(row.email)) {
+      skipped.push({ email: row.email, reason: 'User already exists' });
+    } else {
+      toInsert.push(row);
+    }
+  }
+  for (let index = 0; index < toInsert.length; index += 100) {
+    const chunk = toInsert.slice(index, index + 100);
+    const { data, error } = await supabase.from('users').insert(chunk).select();
+    if (error) throw error;
+    created.push(...(data || []).map(mapUser));
+  }
+  return { created, skipped };
+}
+
+async function importSlackMembers(supabase, members) {
+  const prepared = [];
+  const seenEmails = new Set();
+  for (const member of members) {
+    const mapped = slackMemberToUser(member);
+    if (!mapped || seenEmails.has(mapped.email)) {
+      continue;
+    }
+    seenEmails.add(mapped.email);
+    prepared.push(mapped);
+  }
+  const result = await insertNewUsers(supabase, prepared);
+  return { ...result, errors: [] };
+}
+
+export async function processSlackEvent(headers, rawBody) {
+  if (!(await verifySlackSignature(headers, rawBody))) {
+    return { status: 401, body: { error: 'invalid signature' } };
+  }
+  let payload = {};
+  try {
+    payload = JSON.parse(rawBody || '{}');
+  } catch {
+    return { status: 400, body: { error: 'invalid json' } };
+  }
+  if (payload.type === 'url_verification') {
+    return { status: 200, body: { challenge: payload.challenge } };
+  }
+  if (payload.type === 'event_callback' && payload.event?.type === 'team_join') {
+    try {
+      let member = payload.event.user;
+      if (member?.id && !member?.profile?.email) {
+        member = (await fetchSlackUser(member.id)) || member;
+      }
+      await importSlackMembers(getSupabase(), [member]);
+    } catch (error) {
+      console.error('Slack team_join import failed:', error);
+    }
+  }
+  return { status: 200, body: { ok: true } };
+}
+
 async function verifyGoogleToken(accessToken) {
   const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -1033,31 +1239,17 @@ export async function handleBookingApi(req, res) {
           prepared.push(normalized.user);
         }
 
-        const skipped = [];
-        let created = [];
-        if (prepared.length) {
-          const { data: existingRows, error: existingError } = await supabase
-            .from('users')
-            .select('email')
-            .in('email', prepared.map((row) => row.email));
-          if (existingError) throw existingError;
-          const existingEmails = new Set((existingRows || []).map((row) => row.email));
-          const toInsert = [];
-          for (const row of prepared) {
-            if (existingEmails.has(row.email)) {
-              skipped.push({ email: row.email, reason: 'User already exists' });
-            } else {
-              toInsert.push(row);
-            }
-          }
-          if (toInsert.length) {
-            const { data, error } = await supabase.from('users').insert(toInsert).select();
-            if (error) throw error;
-            created = (data || []).map(mapUser);
-          }
-        }
+        const inserted = await insertNewUsers(supabase, prepared);
+        return ok(res, { created: inserted.created, skipped: inserted.skipped, errors });
+      }
 
-        return ok(res, { created, skipped, errors });
+      case 'importSlackUsers': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const members = await fetchSlackMembers();
+        const result = await importSlackMembers(supabase, members);
+        return ok(res, result);
       }
 
       case 'updateUserStatus': {
