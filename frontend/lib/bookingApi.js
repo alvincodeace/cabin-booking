@@ -127,6 +127,85 @@ function mapLock(row) {
   };
 }
 
+function mapNotification(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id || undefined,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    read: Boolean(row.read),
+    createdAt: toIso(row.created_at),
+  };
+}
+
+async function getAttendeesByBookingIds(supabase, bookingIds) {
+  if (!bookingIds.length) {
+    return {};
+  }
+  const { data, error } = await supabase
+    .from('booking_attendees')
+    .select('booking_id, user_email, name')
+    .in('booking_id', bookingIds);
+  if (error) throw error;
+  const grouped = {};
+  for (const row of data || []) {
+    if (!grouped[row.booking_id]) grouped[row.booking_id] = [];
+    grouped[row.booking_id].push({ email: row.user_email, name: row.name });
+  }
+  return grouped;
+}
+
+async function withAttendees(supabase, bookings) {
+  const grouped = await getAttendeesByBookingIds(
+    supabase,
+    bookings.map((booking) => booking.bookingId)
+  );
+  return bookings.map((booking) => ({
+    ...booking,
+    attendees: grouped[booking.bookingId] || [],
+  }));
+}
+
+async function createNotifications(supabase, rows) {
+  if (!rows.length) {
+    return;
+  }
+  const { error } = await supabase.from('notifications').insert(rows);
+  if (error) throw error;
+}
+
+async function sendInviteEmails(booking, attendees) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM_EMAIL;
+  if (!apiKey || !from || !attendees.length) {
+    return;
+  }
+
+  const subject = `Cabin booked: ${booking.cabinName} on ${booking.date}`;
+  const text = `${booking.bookedBy} booked ${booking.cabinName} on ${booking.date} from ${booking.startTime} to ${booking.endTime}.\nPurpose: ${booking.purpose}`;
+
+  await Promise.all(
+    attendees.map((attendee) =>
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from,
+          to: attendee.email,
+          subject,
+          text,
+        }),
+      }).catch((error) => {
+        console.error('Email send failed:', error);
+      })
+    )
+  );
+}
+
 async function verifyGoogleToken(accessToken) {
   const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -349,13 +428,31 @@ export async function handleBookingApi(req, res) {
       }
 
       case 'myBookings': {
-        const { data, error } = await supabase
+        const { data: ownRows, error: ownError } = await supabase
           .from('bookings')
           .select('*')
-          .eq('booked_by_email', user.email)
-          .order('date', { ascending: false });
-        if (error) throw error;
-        return ok(res, (data || []).map(mapBooking));
+          .eq('booked_by_email', user.email);
+        if (ownError) throw ownError;
+
+        const { data: attendeeRows, error: attendeeError } = await supabase
+          .from('booking_attendees')
+          .select('booking_id')
+          .eq('user_email', user.email);
+        if (attendeeError) throw attendeeError;
+
+        const invitedIds = (attendeeRows || [])
+          .map((row) => row.booking_id)
+          .filter((bookingId) => !(ownRows || []).some((row) => row.booking_id === bookingId));
+
+        let invitedRows = [];
+        if (invitedIds.length) {
+          const { data, error } = await supabase.from('bookings').select('*').in('booking_id', invitedIds);
+          if (error) throw error;
+          invitedRows = data || [];
+        }
+
+        const merged = [...(ownRows || []), ...invitedRows].map(mapBooking);
+        return ok(res, await withAttendees(supabase, merged));
       }
 
       case 'allBookings': {
@@ -369,7 +466,49 @@ export async function handleBookingApi(req, res) {
         if (payload.status) query = query.eq('status', payload.status);
         const { data, error } = await query;
         if (error) throw error;
-        return ok(res, (data || []).map(mapBooking));
+        return ok(res, await withAttendees(supabase, (data || []).map(mapBooking)));
+      }
+
+      case 'companyUsers': {
+        const { data, error } = await supabase
+          .from('users')
+          .select('email, name, department, role')
+          .eq('active', true)
+          .order('name');
+        if (error) throw error;
+        return ok(
+          res,
+          (data || []).map((row) => ({
+            email: row.email,
+            name: row.name,
+            department: row.department || '',
+            role: row.role,
+          }))
+        );
+      }
+
+      case 'notifications': {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_email', user.email)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (error) throw error;
+        return ok(res, (data || []).map(mapNotification));
+      }
+
+      case 'markNotificationsRead': {
+        const ids = Array.isArray(payload.ids) ? payload.ids : [];
+        let query = supabase.from('notifications').update({ read: true }).eq('user_email', user.email);
+        if (ids.length) {
+          query = query.in('id', ids);
+        } else {
+          query = query.eq('read', false);
+        }
+        const { error } = await query;
+        if (error) throw error;
+        return ok(res, null);
       }
 
       case 'allUsers': {
@@ -472,22 +611,66 @@ export async function handleBookingApi(req, res) {
         if (!data?.ok) {
           return fail(res, data?.code || 'BOOKING_FAILED', data?.message || 'Failed to confirm booking');
         }
-        const booking = data.booking;
-        return ok(res, {
-          bookingId: booking.bookingId,
-          cabinId: booking.cabinId,
-          cabinName: booking.cabinName,
-          date: formatDateValue(booking.date),
-          startTime: booking.startTime,
-          endTime: booking.endTime,
-          bookedBy: booking.bookedBy,
-          bookedByEmail: booking.bookedByEmail,
-          department: booking.department,
-          purpose: booking.purpose,
-          status: booking.status,
-          createdAt: toIso(booking.createdAt),
-          updatedAt: toIso(booking.updatedAt),
-        });
+        const booking = {
+          bookingId: data.booking.bookingId,
+          cabinId: data.booking.cabinId,
+          cabinName: data.booking.cabinName,
+          date: formatDateValue(data.booking.date),
+          startTime: data.booking.startTime,
+          endTime: data.booking.endTime,
+          bookedBy: data.booking.bookedBy,
+          bookedByEmail: data.booking.bookedByEmail,
+          department: data.booking.department,
+          purpose: data.booking.purpose,
+          status: data.booking.status,
+          createdAt: toIso(data.booking.createdAt),
+          updatedAt: toIso(data.booking.updatedAt),
+          attendees: [],
+        };
+
+        const requestedEmails = Array.isArray(payload.attendeeEmails)
+          ? payload.attendeeEmails
+          : [];
+        const uniqueEmails = [...new Set(requestedEmails.map((email) => String(email).toLowerCase()))]
+          .filter((email) => email && email !== user.email && email.endsWith('@codeace.com'));
+
+        if (uniqueEmails.length) {
+          const { data: memberRows, error: memberError } = await supabase
+            .from('users')
+            .select('email, name')
+            .in('email', uniqueEmails)
+            .eq('active', true);
+          if (memberError) throw memberError;
+          const attendees = (memberRows || []).map((row) => ({
+            email: row.email,
+            name: row.name,
+          }));
+          if (attendees.length) {
+            const { error: attendeeInsertError } = await supabase.from('booking_attendees').insert(
+              attendees.map((attendee) => ({
+                booking_id: booking.bookingId,
+                user_email: attendee.email,
+                name: attendee.name,
+              }))
+            );
+            if (attendeeInsertError) throw attendeeInsertError;
+
+            await createNotifications(
+              supabase,
+              attendees.map((attendee) => ({
+                user_email: attendee.email,
+                booking_id: booking.bookingId,
+                type: 'BOOKING_INVITE',
+                title: `${user.name} booked ${booking.cabinName}`,
+                message: `${booking.date} ${booking.startTime}–${booking.endTime}. ${booking.purpose}`,
+              }))
+            );
+            await sendInviteEmails(booking, attendees);
+            booking.attendees = attendees;
+          }
+        }
+
+        return ok(res, booking);
       }
 
       case 'cancelLock': {
@@ -518,11 +701,34 @@ export async function handleBookingApi(req, res) {
         if (bookingDateTime < new Date()) {
           return fail(res, 'PAST_BOOKING', 'Cannot cancel past bookings');
         }
+
+        const { data: attendeeRows } = await supabase
+          .from('booking_attendees')
+          .select('user_email, name')
+          .eq('booking_id', payload.bookingId);
+
         const { error } = await supabase
           .from('bookings')
           .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
           .eq('booking_id', payload.bookingId);
         if (error) throw error;
+
+        const notifyEmails = new Set((attendeeRows || []).map((row) => row.user_email));
+        if (booking.booked_by_email !== user.email) {
+          notifyEmails.add(booking.booked_by_email);
+        }
+        notifyEmails.delete(user.email);
+
+        await createNotifications(
+          supabase,
+          [...notifyEmails].map((email) => ({
+            user_email: email,
+            booking_id: booking.booking_id,
+            type: 'BOOKING_CANCELLED',
+            title: `${booking.cabin_name} booking cancelled`,
+            message: `${formatDateValue(booking.date)} ${booking.start_time}–${booking.end_time} was cancelled by ${user.name}.`,
+          }))
+        );
         return ok(res, null);
       }
 

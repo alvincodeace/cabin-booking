@@ -212,6 +212,7 @@ export function Dashboard({ user }: DashboardProps) {
           }
           onClose={() => setSelectedSlot(null)}
           onSuccess={handleBookingSuccess}
+          organizerEmail={user.email}
         />
       )}
     </div>

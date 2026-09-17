@@ -38,6 +38,22 @@ export interface Booking {
   status: BookingStatus;
   createdAt: string;
   updatedAt: string;
+  attendees?: BookingAttendee[];
+}
+
+export interface BookingAttendee {
+  email: string;
+  name: string;
+}
+
+export interface AppNotification {
+  id: string;
+  bookingId?: string;
+  type: 'BOOKING_INVITE' | 'BOOKING_CANCELLED';
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
 }
 
 export interface BookingLock {
@@ -94,6 +110,7 @@ export interface CreateLockResponse {
 export interface ConfirmBookingRequest {
   lockId: string;
   purpose: string;
+  attendeeEmails?: string[];
 }
 
 export interface BookingRequest {

@@ -8,6 +8,7 @@ import type {
   CreateLockResponse,
   ConfirmBookingRequest,
   Settings,
+  AppNotification,
 } from '../types';
 
 const API_URL = '/api';
@@ -190,6 +191,20 @@ export async function updateSettings(settings: Settings): Promise<Settings> {
 
 export async function getActiveLocks(): Promise<number> {
   return apiCall<number>('activeLocks');
+}
+
+export async function getCompanyUsers(): Promise<
+  Pick<User, 'email' | 'name' | 'department' | 'role'>[]
+> {
+  return apiCall('companyUsers');
+}
+
+export async function getNotifications(): Promise<AppNotification[]> {
+  return apiCall<AppNotification[]>('notifications');
+}
+
+export async function markNotificationsRead(ids?: string[]): Promise<void> {
+  return apiCall<void>('markNotificationsRead', { ids });
 }
 
 export async function getTodayStats(): Promise<{

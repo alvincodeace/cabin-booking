@@ -103,6 +103,9 @@ export function BookingList({
               Purpose
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Members
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Status
             </th>
             {showActions && (
@@ -139,6 +142,13 @@ export function BookingList({
               <td className="px-6 py-4">
                 <div className="text-sm text-gray-900 max-w-xs truncate">
                   {booking.purpose}
+                </div>
+              </td>
+              <td className="px-6 py-4">
+                <div className="text-sm text-gray-900 max-w-xs">
+                  {booking.attendees && booking.attendees.length > 0
+                    ? booking.attendees.map((attendee) => attendee.name).join(', ')
+                    : '—'}
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">

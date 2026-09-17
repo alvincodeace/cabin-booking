@@ -66,7 +66,7 @@ export function MyBookings({ user }: MyBookingsProps) {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">My Bookings</h1>
         <p className="mt-1 text-sm text-gray-600">
-          View and manage your cabin bookings
+          Bookings you created and meetings you were added to
         </p>
       </div>
 
