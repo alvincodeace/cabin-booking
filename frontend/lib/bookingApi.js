@@ -1,0 +1,594 @@
+import { createClient } from '@supabase/supabase-js';
+
+const ALLOWED_DOMAIN = 'codeace.com';
+const TIMEZONE = 'Asia/Kolkata';
+
+function getSupabase() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+  }
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+function ok(res, data) {
+  return res.status(200).json({ success: true, data, error: null });
+}
+
+function fail(res, code, message) {
+  return res.status(200).json({
+    success: false,
+    data: null,
+    error: { code, message },
+  });
+}
+
+function generateId(prefix) {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+}
+
+function todayInKolkata() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function toIso(value) {
+  if (!value) return value;
+  return new Date(value).toISOString();
+}
+
+function formatDateValue(value) {
+  if (!value) return value;
+  if (typeof value === 'string') return value.slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value));
+}
+
+function timeToMinutes(timeStr) {
+  const [hours, minutes] = String(timeStr).split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function doTimesOverlap(start1, end1, start2, end2) {
+  return timeToMinutes(start1) < timeToMinutes(end2) && timeToMinutes(end1) > timeToMinutes(start2);
+}
+
+function generateTimeSlots() {
+  const slots = [];
+  for (let hour = 9; hour <= 17; hour++) {
+    slots.push(`${String(hour).padStart(2, '0')}:00`);
+  }
+  return slots;
+}
+
+function mapUser(row) {
+  return {
+    email: row.email,
+    name: row.name,
+    employeeId: row.employee_id || '',
+    department: row.department || '',
+    role: row.role,
+    active: Boolean(row.active),
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function mapCabin(row) {
+  return {
+    cabinId: row.cabin_id,
+    cabinName: row.cabin_name,
+    location: row.location || '',
+    capacity: Number(row.capacity || 0),
+    description: row.description || '',
+    status: row.status,
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function mapBooking(row) {
+  return {
+    bookingId: row.booking_id,
+    cabinId: row.cabin_id,
+    cabinName: row.cabin_name,
+    date: formatDateValue(row.date),
+    startTime: row.start_time,
+    endTime: row.end_time,
+    bookedBy: row.booked_by,
+    bookedByEmail: row.booked_by_email,
+    department: row.department || '',
+    purpose: row.purpose || '',
+    status: row.status,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
+function mapLock(row) {
+  return {
+    lockId: row.lock_id,
+    cabinId: row.cabin_id,
+    date: formatDateValue(row.date),
+    startTime: row.start_time,
+    endTime: row.end_time,
+    userEmail: row.user_email,
+    createdAt: toIso(row.created_at),
+    expiresAt: toIso(row.expires_at),
+  };
+}
+
+async function verifyGoogleToken(accessToken) {
+  const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  let profile = null;
+  if (userInfoResponse.ok) {
+    profile = await userInfoResponse.json();
+  } else {
+    const tokenInfoResponse = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
+    );
+    if (tokenInfoResponse.ok) {
+      profile = await tokenInfoResponse.json();
+    }
+  }
+
+  const email = String(profile?.email || '').toLowerCase();
+  if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
+    return null;
+  }
+
+  return {
+    email,
+    name: profile.name || email.split('@')[0],
+  };
+}
+
+async function getOrCreateUser(supabase, profile) {
+  const { data: existing, error: existingError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', profile.email)
+    .maybeSingle();
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  if (existing) {
+    if (!existing.active) {
+      return { error: { code: 'USER_INACTIVE', message: 'User account is inactive' } };
+    }
+    if (!existing.name && profile.name) {
+      await supabase.from('users').update({ name: profile.name }).eq('email', profile.email);
+      existing.name = profile.name;
+    }
+    return { user: mapUser(existing) };
+  }
+
+  const { count } = await supabase
+    .from('users')
+    .select('email', { count: 'exact', head: true })
+    .eq('role', 'ADMIN');
+
+  const role = profile.email === 'alvinksabu@codeace.com' || !count ? 'ADMIN' : 'EMPLOYEE';
+
+  const { data: created, error: createError } = await supabase
+    .from('users')
+    .insert({
+      email: profile.email,
+      name: profile.name,
+      employee_id: '',
+      department: '',
+      role,
+      active: true,
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    throw createError;
+  }
+
+  return { user: mapUser(created) };
+}
+
+async function getSettings(supabase) {
+  const { data, error } = await supabase.from('settings').select('*').eq('id', 1).single();
+  if (error) {
+    throw error;
+  }
+  return {
+    lockDurationMinutes: data.lock_duration_minutes,
+    maxBookingDurationMinutes: data.max_booking_duration_minutes,
+    advanceBookingDays: data.advance_booking_days,
+  };
+}
+
+function validateBookingDateTime(date, startTime, endTime, settings) {
+  const bookingDateTime = new Date(`${date}T${startTime}:00+05:30`);
+  if (bookingDateTime < new Date()) {
+    return { valid: false, code: 'PAST_BOOKING', message: 'Cannot book in the past' };
+  }
+
+  const maxAdvance = new Date(Date.now() + settings.advanceBookingDays * 24 * 60 * 60 * 1000);
+  if (bookingDateTime > maxAdvance) {
+    return {
+      valid: false,
+      code: 'ADVANCE_LIMIT_EXCEEDED',
+      message: `Cannot book more than ${settings.advanceBookingDays} days in advance`,
+    };
+  }
+
+  const durationMinutes = timeToMinutes(endTime) - timeToMinutes(startTime);
+  if (durationMinutes <= 0) {
+    return { valid: false, code: 'INVALID_DURATION', message: 'End time must be after start time' };
+  }
+  if (durationMinutes > settings.maxBookingDurationMinutes) {
+    return {
+      valid: false,
+      code: 'DURATION_EXCEEDED',
+      message: `Maximum booking duration is ${settings.maxBookingDurationMinutes} minutes`,
+    };
+  }
+  return { valid: true };
+}
+
+function requireAdmin(user) {
+  return user.role === 'ADMIN';
+}
+
+export async function handleBookingApi(req, res) {
+  try {
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const action = payload.action;
+    if (!action) {
+      return fail(res, 'ACTION_REQUIRED', 'Action parameter is required');
+    }
+
+    const accessToken = payload.accessToken;
+    if (!accessToken) {
+      return fail(res, 'UNAUTHORIZED', 'Sign in with Google to continue');
+    }
+
+    const profile = await verifyGoogleToken(accessToken);
+    if (!profile) {
+      return fail(res, 'UNAUTHORIZED', 'Only @codeace.com accounts can sign in. Try Sign in with Google again.');
+    }
+
+    const supabase = getSupabase();
+    const current = await getOrCreateUser(supabase, profile);
+    if (current.error) {
+      return fail(res, current.error.code, current.error.message);
+    }
+    const user = current.user;
+
+    switch (action) {
+      case 'currentUser':
+        return ok(res, user);
+
+      case 'cabins': {
+        const { data, error } = await supabase.from('cabins').select('*').order('cabin_name');
+        if (error) throw error;
+        return ok(res, (data || []).map(mapCabin));
+      }
+
+      case 'bookings': {
+        const { data, error } = await supabase.from('bookings').select('*').eq('date', payload.date);
+        if (error) throw error;
+        return ok(res, (data || []).map(mapBooking));
+      }
+
+      case 'availability': {
+        if (!payload.date) {
+          return fail(res, 'DATE_REQUIRED', 'Date parameter is required');
+        }
+        await supabase.from('locks').delete().lte('expires_at', new Date().toISOString());
+        const [{ data: cabins, error: cabinError }, { data: bookings, error: bookingError }, { data: locks, error: lockError }] =
+          await Promise.all([
+            supabase.from('cabins').select('*').order('cabin_name'),
+            supabase.from('bookings').select('*').eq('date', payload.date).eq('status', 'BOOKED'),
+            supabase.from('locks').select('*').eq('date', payload.date).gt('expires_at', new Date().toISOString()),
+          ]);
+        if (cabinError) throw cabinError;
+        if (bookingError) throw bookingError;
+        if (lockError) throw lockError;
+
+        const timeSlots = generateTimeSlots();
+        const availability = (cabins || []).map((cabin) => {
+          const slots = [];
+          for (let i = 0; i < timeSlots.length - 1; i++) {
+            const startTime = timeSlots[i];
+            const endTime = timeSlots[i + 1];
+            const slot = { time: startTime, status: 'AVAILABLE' };
+            if (cabin.status !== 'ACTIVE') {
+              slot.status = 'DISABLED';
+            } else {
+              const overlappingBooking = (bookings || []).find(
+                (booking) =>
+                  booking.cabin_id === cabin.cabin_id &&
+                  doTimesOverlap(startTime, endTime, booking.start_time, booking.end_time)
+              );
+              if (overlappingBooking) {
+                slot.status = 'BOOKED';
+                slot.booking = mapBooking(overlappingBooking);
+              } else {
+                const overlappingLock = (locks || []).find(
+                  (lock) =>
+                    lock.cabin_id === cabin.cabin_id &&
+                    doTimesOverlap(startTime, endTime, lock.start_time, lock.end_time)
+                );
+                if (overlappingLock) {
+                  slot.status = 'LOCKED';
+                  slot.lock = mapLock(overlappingLock);
+                  slot.isOwnLock = overlappingLock.user_email === user.email;
+                }
+              }
+            }
+            slots.push(slot);
+          }
+          return { cabin: mapCabin(cabin), slots };
+        });
+        return ok(res, availability);
+      }
+
+      case 'myBookings': {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('booked_by_email', user.email)
+          .order('date', { ascending: false });
+        if (error) throw error;
+        return ok(res, (data || []).map(mapBooking));
+      }
+
+      case 'allBookings': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        let query = supabase.from('bookings').select('*').order('date', { ascending: false });
+        if (payload.date) query = query.eq('date', payload.date);
+        if (payload.cabinId) query = query.eq('cabin_id', payload.cabinId);
+        if (payload.userEmail) query = query.eq('booked_by_email', payload.userEmail);
+        if (payload.status) query = query.eq('status', payload.status);
+        const { data, error } = await query;
+        if (error) throw error;
+        return ok(res, (data || []).map(mapBooking));
+      }
+
+      case 'allUsers': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const { data, error } = await supabase.from('users').select('*').order('name');
+        if (error) throw error;
+        return ok(res, (data || []).map(mapUser));
+      }
+
+      case 'settings':
+        return ok(res, await getSettings(supabase));
+
+      case 'todayStats': {
+        const today = todayInKolkata();
+        const [{ data: cabins }, { data: bookings }, { count: activeLocks }] = await Promise.all([
+          supabase.from('cabins').select('*'),
+          supabase.from('bookings').select('*').eq('date', today).eq('status', 'BOOKED'),
+          supabase
+            .from('locks')
+            .select('lock_id', { count: 'exact', head: true })
+            .gt('expires_at', new Date().toISOString()),
+        ]);
+        return ok(res, {
+          totalCabins: (cabins || []).length,
+          availableToday: (cabins || []).filter((cabin) => cabin.status === 'ACTIVE').length,
+          todayBookings: (bookings || []).length,
+          activeLocks: activeLocks || 0,
+        });
+      }
+
+      case 'activeLocks': {
+        const { count } = await supabase
+          .from('locks')
+          .select('lock_id', { count: 'exact', head: true })
+          .gt('expires_at', new Date().toISOString());
+        return ok(res, count || 0);
+      }
+
+      case 'createLock': {
+        const { cabinId, date, startTime, endTime } = payload;
+        if (!cabinId || !date || !startTime || !endTime) {
+          return fail(res, 'INVALID_INPUT', 'Missing required parameters');
+        }
+        const { data: cabin } = await supabase.from('cabins').select('*').eq('cabin_id', cabinId).maybeSingle();
+        if (!cabin) {
+          return fail(res, 'CABIN_NOT_FOUND', 'Cabin not found');
+        }
+        if (cabin.status !== 'ACTIVE') {
+          return fail(res, 'CABIN_DISABLED', 'This cabin is currently disabled');
+        }
+        const settings = await getSettings(supabase);
+        const validation = validateBookingDateTime(date, startTime, endTime, settings);
+        if (!validation.valid) {
+          return fail(res, validation.code, validation.message);
+        }
+        const { data, error } = await supabase.rpc('create_booking_lock', {
+          p_cabin_id: cabinId,
+          p_date: date,
+          p_start_time: startTime,
+          p_end_time: endTime,
+          p_user_email: user.email,
+          p_lock_duration_minutes: settings.lockDurationMinutes,
+        });
+        if (error) throw error;
+        if (!data?.ok) {
+          return fail(res, data?.code || 'LOCK_FAILED', data?.message || 'Failed to create lock');
+        }
+        return ok(res, { lockId: data.lockId, expiresAt: data.expiresAt });
+      }
+
+      case 'refreshLock': {
+        const settings = await getSettings(supabase);
+        const { data: lock } = await supabase.from('locks').select('*').eq('lock_id', payload.lockId).maybeSingle();
+        if (!lock) {
+          return fail(res, 'LOCK_NOT_FOUND', 'Lock not found');
+        }
+        if (lock.user_email !== user.email) {
+          return fail(res, 'UNAUTHORIZED', 'This lock belongs to another user');
+        }
+        if (new Date(lock.expires_at) < new Date()) {
+          return fail(res, 'LOCK_EXPIRED', 'Lock has expired');
+        }
+        const expiresAt = new Date(Date.now() + settings.lockDurationMinutes * 60000).toISOString();
+        const { error } = await supabase.from('locks').update({ expires_at: expiresAt }).eq('lock_id', payload.lockId);
+        if (error) throw error;
+        return ok(res, { expiresAt });
+      }
+
+      case 'confirmBooking': {
+        const { data, error } = await supabase.rpc('confirm_booking_from_lock', {
+          p_lock_id: payload.lockId,
+          p_user_email: user.email,
+          p_user_name: user.name,
+          p_department: user.department || '',
+          p_purpose: payload.purpose || '',
+        });
+        if (error) throw error;
+        if (!data?.ok) {
+          return fail(res, data?.code || 'BOOKING_FAILED', data?.message || 'Failed to confirm booking');
+        }
+        const booking = data.booking;
+        return ok(res, {
+          bookingId: booking.bookingId,
+          cabinId: booking.cabinId,
+          cabinName: booking.cabinName,
+          date: formatDateValue(booking.date),
+          startTime: booking.startTime,
+          endTime: booking.endTime,
+          bookedBy: booking.bookedBy,
+          bookedByEmail: booking.bookedByEmail,
+          department: booking.department,
+          purpose: booking.purpose,
+          status: booking.status,
+          createdAt: toIso(booking.createdAt),
+          updatedAt: toIso(booking.updatedAt),
+        });
+      }
+
+      case 'cancelLock': {
+        const { data: lock } = await supabase.from('locks').select('*').eq('lock_id', payload.lockId).maybeSingle();
+        if (lock && lock.user_email !== user.email) {
+          return fail(res, 'UNAUTHORIZED', 'This lock belongs to another user');
+        }
+        await supabase.from('locks').delete().eq('lock_id', payload.lockId);
+        return ok(res, null);
+      }
+
+      case 'cancelBooking': {
+        const { data: booking } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('booking_id', payload.bookingId)
+          .maybeSingle();
+        if (!booking) {
+          return fail(res, 'BOOKING_NOT_FOUND', 'Booking not found');
+        }
+        if (booking.status !== 'BOOKED') {
+          return fail(res, 'ALREADY_CANCELLED', 'Booking is already cancelled');
+        }
+        if (user.role !== 'ADMIN' && booking.booked_by_email !== user.email) {
+          return fail(res, 'UNAUTHORIZED', 'You can only cancel your own bookings');
+        }
+        const bookingDateTime = new Date(`${formatDateValue(booking.date)}T${booking.start_time}:00+05:30`);
+        if (bookingDateTime < new Date()) {
+          return fail(res, 'PAST_BOOKING', 'Cannot cancel past bookings');
+        }
+        const { error } = await supabase
+          .from('bookings')
+          .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
+          .eq('booking_id', payload.bookingId);
+        if (error) throw error;
+        return ok(res, null);
+      }
+
+      case 'updateCabinStatus': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const { error } = await supabase
+          .from('cabins')
+          .update({ status: payload.status })
+          .eq('cabin_id', payload.cabinId);
+        if (error) throw error;
+        return ok(res, null);
+      }
+
+      case 'createCabin': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const cabinId = generateId('CABIN');
+        const { data, error } = await supabase
+          .from('cabins')
+          .insert({
+            cabin_id: cabinId,
+            cabin_name: payload.cabinName,
+            location: payload.location || '',
+            capacity: payload.capacity || 4,
+            description: payload.description || '',
+            status: 'ACTIVE',
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return ok(res, mapCabin(data));
+      }
+
+      case 'updateUserStatus': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const { error } = await supabase.from('users').update({ active: payload.active }).eq('email', payload.email);
+        if (error) throw error;
+        return ok(res, null);
+      }
+
+      case 'updateSettings': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const { error } = await supabase
+          .from('settings')
+          .update({
+            lock_duration_minutes: payload.lockDurationMinutes,
+            max_booking_duration_minutes: payload.maxBookingDurationMinutes,
+            advance_booking_days: payload.advanceBookingDays,
+          })
+          .eq('id', 1);
+        if (error) throw error;
+        return ok(res, await getSettings(supabase));
+      }
+
+      default:
+        return fail(res, 'INVALID_ACTION', 'Invalid action');
+    }
+  } catch (error) {
+    console.error('Booking API error:', error);
+    return fail(res, 'SERVER_ERROR', error instanceof Error ? error.message : 'Server error');
+  }
+}

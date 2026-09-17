@@ -10,7 +10,7 @@ import type {
   Settings,
 } from '../types';
 
-const API_URL = '/api/script';
+const API_URL = '/api';
 const TOKEN_STORAGE_KEY = 'google_access_token';
 
 let accessToken: string | null =
@@ -46,7 +46,7 @@ function getFriendlyErrorMessage(error: unknown): string {
     message.toLowerCase().includes('networkerror') ||
     message.toLowerCase().includes('load failed')
   ) {
-    return 'Cannot reach the booking server. Check that VITE_APPS_SCRIPT_URL is set in Vercel and the Apps Script web app is deployed as Execute as: Me, Who has access: Anyone.';
+    return 'Cannot reach the booking server. Check the Vercel deployment and that SUPABASE_URL is configured.';
   }
   return message;
 }
@@ -76,9 +76,7 @@ async function apiCall<T>(action: string, params?: object): Promise<T> {
     try {
       result = JSON.parse(text) as ApiResponse<T>;
     } catch {
-      throw new Error(
-        'Backend returned a login page instead of JSON. Redeploy the web app as Execute as: Me and Who has access: Anyone, then use the /macros/s/.../exec URL.'
-      );
+      throw new Error('Backend returned an invalid response. Check that the Vercel API and Supabase keys are configured.');
     }
 
     if (!result.success) {
