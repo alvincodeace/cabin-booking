@@ -147,13 +147,24 @@ async function getAttendeesByBookingIds(supabase, bookingIds) {
     .from('booking_attendees')
     .select('booking_id, user_email, name')
     .in('booking_id', bookingIds);
-  if (error) throw error;
+  if (error) {
+    console.error('Failed to load attendees:', error.message || error);
+    return {};
+  }
   const grouped = {};
   for (const row of data || []) {
     if (!grouped[row.booking_id]) grouped[row.booking_id] = [];
     grouped[row.booking_id].push({ email: row.user_email, name: row.name });
   }
   return grouped;
+}
+
+function sortBookings(bookings) {
+  return [...bookings].sort((a, b) => {
+    const dateCompare = String(b.date || '').localeCompare(String(a.date || ''));
+    if (dateCompare !== 0) return dateCompare;
+    return String(b.startTime || '').localeCompare(String(a.startTime || ''));
+  });
 }
 
 async function withAttendees(supabase, bookings) {
@@ -506,14 +517,15 @@ export async function handleBookingApi(req, res) {
         if (!requireAdmin(user)) {
           return fail(res, 'UNAUTHORIZED', 'Admin access required');
         }
-        let query = supabase.from('bookings').select('*').order('date', { ascending: false });
+        let query = supabase.from('bookings').select('*');
         if (payload.date) query = query.eq('date', payload.date);
         if (payload.cabinId) query = query.eq('cabin_id', payload.cabinId);
         if (payload.userEmail) query = query.eq('booked_by_email', payload.userEmail);
         if (payload.status) query = query.eq('status', payload.status);
         const { data, error } = await query;
         if (error) throw error;
-        return ok(res, await withAttendees(supabase, (data || []).map(mapBooking)));
+        const bookings = await withAttendees(supabase, (data || []).map(mapBooking));
+        return ok(res, sortBookings(bookings));
       }
 
       case 'companyUsers': {

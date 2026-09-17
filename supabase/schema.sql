@@ -56,16 +56,39 @@ create table if not exists settings (
   advance_booking_days integer not null default 30
 );
 
+create table if not exists booking_attendees (
+  booking_id text not null references bookings(booking_id) on delete cascade,
+  user_email text not null references users(email),
+  name text not null default '',
+  created_at timestamptz not null default now(),
+  primary key (booking_id, user_email)
+);
+
+create table if not exists notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_email text not null references users(email),
+  booking_id text,
+  type text not null,
+  title text not null,
+  message text not null,
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists bookings_cabin_date_idx on bookings (cabin_id, date);
 create index if not exists bookings_user_idx on bookings (booked_by_email);
 create index if not exists locks_cabin_date_idx on locks (cabin_id, date);
 create index if not exists locks_expires_idx on locks (expires_at);
+create index if not exists notifications_user_idx on notifications (user_email, created_at desc);
+create index if not exists booking_attendees_user_idx on booking_attendees (user_email);
 
 alter table users enable row level security;
 alter table cabins enable row level security;
 alter table bookings enable row level security;
 alter table locks enable row level security;
 alter table settings enable row level security;
+alter table booking_attendees enable row level security;
+alter table notifications enable row level security;
 
 insert into settings (id, lock_duration_minutes, max_booking_duration_minutes, advance_booking_days)
 values (1, 5, 60, 30)

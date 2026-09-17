@@ -58,6 +58,7 @@ export function Admin({ user }: AdminProps) {
   });
   const [cabinFormError, setCabinFormError] = useState<string | null>(null);
   const [isSavingCabin, setIsSavingCabin] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -65,17 +66,19 @@ export function Admin({ user }: AdminProps) {
 
   const loadData = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       if (activeTab === 'overview') {
         const statsData = await getTodayStats();
         setStats(statsData);
       } else if (activeTab === 'bookings') {
         const bookingsData = await getAllBookings();
+        const list = Array.isArray(bookingsData) ? bookingsData : [];
         setBookings(
-          bookingsData.sort((a, b) => {
-            const dateCompare = b.date.localeCompare(a.date);
+          [...list].sort((a, b) => {
+            const dateCompare = String(b.date || '').localeCompare(String(a.date || ''));
             if (dateCompare !== 0) return dateCompare;
-            return b.startTime.localeCompare(a.startTime);
+            return String(b.startTime || '').localeCompare(String(a.startTime || ''));
           })
         );
       } else if (activeTab === 'cabins') {
@@ -90,6 +93,10 @@ export function Admin({ user }: AdminProps) {
       }
     } catch (err) {
       console.error('Failed to load data:', err);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load data');
+      if (activeTab === 'bookings') {
+        setBookings([]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -269,6 +276,18 @@ export function Admin({ user }: AdminProps) {
           ))}
         </nav>
       </div>
+
+      {loadError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-700">{loadError}</p>
+          <button
+            onClick={loadData}
+            className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
