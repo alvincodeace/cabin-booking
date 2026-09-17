@@ -5,9 +5,10 @@ import { getNotifications, markNotificationsRead } from '../api/appsScript';
 
 interface HeaderProps {
   user: User | null;
+  onSignOut?: () => void;
 }
 
-export function Header({ user }: HeaderProps) {
+export function Header({ user, onSignOut }: HeaderProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -190,6 +191,17 @@ export function Header({ user }: HeaderProps) {
                     <div className="px-4 py-2 text-xs text-gray-500">
                       {user.department}
                     </div>
+                    {onSignOut && (
+                      <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          onSignOut();
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        Sign out
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import { GoogleOAuthProvider, useGoogleLogin, googleLogout } from '@react-oauth/google';
 import type { User } from './types';
 import { getCurrentUser, getStoredAccessToken, setAccessToken } from './api/appsScript';
 import { Header } from './components/Header';
@@ -56,6 +56,14 @@ function AppContent() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSignOut = () => {
+    googleLogout();
+    setAccessToken(null);
+    setUser(null);
+    setIsGoogleAuth(false);
+    setError(null);
   };
 
   if (isLoading) {
@@ -137,7 +145,7 @@ function AppContent() {
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-50">
-        <Header user={user} />
+        <Header user={user} onSignOut={handleSignOut} />
         <Routes>
           <Route
             path="/"
