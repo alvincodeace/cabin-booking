@@ -66,7 +66,7 @@ function doTimesOverlap(start1, end1, start2, end2) {
 
 function generateTimeSlots() {
   const slots = [];
-  for (let minutes = 9 * 60; minutes <= 17 * 60; minutes += 30) {
+  for (let minutes = 9 * 60; minutes <= 19 * 60; minutes += 30) {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     slots.push(`${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`);
