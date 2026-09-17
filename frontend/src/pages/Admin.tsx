@@ -57,6 +57,69 @@ function formatAuditTime(value: string) {
   });
 }
 
+const PAGE_SIZE = 10;
+
+function pageCount(total: number) {
+  return Math.max(1, Math.ceil(total / PAGE_SIZE));
+}
+
+function pageSlice<T>(items: T[], page: number) {
+  const totalPages = pageCount(items.length);
+  const current = Math.min(Math.max(page, 1), totalPages);
+  const start = (current - 1) * PAGE_SIZE;
+  return {
+    current,
+    totalPages,
+    items: items.slice(start, start + PAGE_SIZE),
+  };
+}
+
+function PaginationBar({
+  page,
+  totalPages,
+  total,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPage: (next: number) => void;
+}) {
+  if (total === 0) {
+    return null;
+  }
+  const start = (page - 1) * PAGE_SIZE + 1;
+  const end = Math.min(page * PAGE_SIZE, total);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-200">
+      <p className="text-xs text-stone-500">
+        {start}–{end} of {total}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="btn-ghost text-sm"
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+        >
+          Previous
+        </button>
+        <span className="text-xs text-stone-500">
+          Page {page} of {totalPages}
+        </span>
+        <button
+          type="button"
+          className="btn-ghost text-sm"
+          disabled={page >= totalPages}
+          onClick={() => onPage(page + 1)}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function detectDelimiter(line: string): string {
   const comma = (line.match(/,/g) || []).length;
   const tab = (line.match(/\t/g) || []).length;
@@ -212,6 +275,10 @@ export function Admin({ user }: AdminProps) {
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState('');
+  const [bookingPage, setBookingPage] = useState(1);
+  const [cabinPage, setCabinPage] = useState(1);
+  const [userPage, setUserPage] = useState(1);
+  const [activityPage, setActivityPage] = useState(1);
 
   useEffect(() => {
     loadData();
@@ -571,6 +638,27 @@ export function Admin({ user }: AdminProps) {
     });
   }, [users, userSearch, userRoleFilter, userStatusFilter]);
 
+  useEffect(() => {
+    setBookingPage(1);
+  }, [bookingSearch, bookingStatus, bookingDate, bookingCabin]);
+
+  useEffect(() => {
+    setUserPage(1);
+  }, [userSearch, userRoleFilter, userStatusFilter]);
+
+  useEffect(() => {
+    setCabinPage(1);
+  }, [cabins]);
+
+  useEffect(() => {
+    setActivityPage(1);
+  }, [auditLogs, auditSearch]);
+
+  const pagedBookings = pageSlice(filteredBookings, bookingPage);
+  const pagedCabins = pageSlice(cabins, cabinPage);
+  const pagedUsers = pageSlice(filteredUsers, userPage);
+  const pagedLogs = pageSlice(auditLogs, activityPage);
+
   return (
     <div className="page-wrap">
       <div className="mb-6">
@@ -703,10 +791,16 @@ export function Admin({ user }: AdminProps) {
                 </div>
               </div>
               <BookingList
-                bookings={filteredBookings}
+                bookings={pagedBookings.items}
                 user={user}
                 onCancel={handleCancelBooking}
                 showActions={true}
+              />
+              <PaginationBar
+                page={pagedBookings.current}
+                totalPages={pagedBookings.totalPages}
+                total={filteredBookings.length}
+                onPage={setBookingPage}
               />
             </div>
           )}
@@ -804,7 +898,7 @@ export function Admin({ user }: AdminProps) {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {cabins.map((cabin) => (
+                    {pagedCabins.items.map((cabin) => (
                       <tr key={cabin.cabinId}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {cabin.cabinName}
@@ -848,6 +942,12 @@ export function Admin({ user }: AdminProps) {
                   </tbody>
                 </table>
               </div>
+              <PaginationBar
+                page={pagedCabins.current}
+                totalPages={pagedCabins.totalPages}
+                total={cabins.length}
+                onPage={setCabinPage}
+              />
             </div>
           )}
 
@@ -1011,7 +1111,7 @@ export function Admin({ user }: AdminProps) {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredUsers.map((u) => (
+                    {pagedUsers.items.map((u) => (
                       <tr key={u.email}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {u.name}
@@ -1072,6 +1172,12 @@ export function Admin({ user }: AdminProps) {
                   </tbody>
                 </table>
               </div>
+              <PaginationBar
+                page={pagedUsers.current}
+                totalPages={pagedUsers.totalPages}
+                total={filteredUsers.length}
+                onPage={setUserPage}
+              />
             </div>
           )}
 
@@ -1133,7 +1239,7 @@ export function Admin({ user }: AdminProps) {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {auditLogs.map((log) => (
+                      {pagedLogs.items.map((log) => (
                         <tr key={log.id}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {formatAuditTime(log.createdAt)}
@@ -1155,6 +1261,14 @@ export function Admin({ user }: AdminProps) {
                     </tbody>
                   </table>
                 </div>
+              )}
+              {!auditSetupRequired && auditLogs.length > 0 && (
+                <PaginationBar
+                  page={pagedLogs.current}
+                  totalPages={pagedLogs.totalPages}
+                  total={auditLogs.length}
+                  onPage={setActivityPage}
+                />
               )}
             </div>
           )}
