@@ -1170,9 +1170,11 @@ export async function handleBookingApi(req, res) {
         if (user.role !== 'ADMIN' && booking.booked_by_email !== user.email) {
           return fail(res, 'UNAUTHORIZED', 'You can only cancel your own bookings');
         }
-        const bookingDateTime = new Date(`${formatDateValue(booking.date)}T${booking.start_time}:00+05:30`);
-        if (bookingDateTime < new Date()) {
-          return fail(res, 'PAST_BOOKING', 'Cannot cancel past bookings');
+        if (user.role !== 'ADMIN') {
+          const bookingDateTime = new Date(`${formatDateValue(booking.date)}T${booking.start_time}:00+05:30`);
+          if (bookingDateTime < new Date()) {
+            return fail(res, 'PAST_BOOKING', 'Cannot cancel past bookings');
+          }
         }
 
         const { data: attendeeRows } = await supabase

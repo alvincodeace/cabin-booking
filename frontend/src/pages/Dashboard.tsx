@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { User, CabinAvailability, Cabin } from '../types';
-import { getCabinAvailability, getSettings } from '../api/appsScript';
+import type { User, CabinAvailability, Cabin, Booking } from '../types';
+import { getCabinAvailability, getSettings, cancelBooking } from '../api/appsScript';
 import { CabinCard } from '../components/CabinCard';
 import { BookingModal } from '../components/BookingModal';
 
@@ -115,6 +115,21 @@ export function Dashboard({ user }: DashboardProps) {
     setBookingRange({ cabin, startTime, endTime });
   };
 
+  const handleCancelBooking = async (booking: Booking) => {
+    const confirmed = confirm(
+      `Cancel ${booking.cabinName} ${booking.startTime}–${booking.endTime} booked by ${booking.bookedBy}?`
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await cancelBooking(booking.bookingId);
+      loadAvailability();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to cancel booking');
+    }
+  };
+
   const handleBookingSuccess = () => {
     setBookingRange(null);
     setRefreshKey((prev) => prev + 1);
@@ -177,6 +192,7 @@ export function Dashboard({ user }: DashboardProps) {
         </span>
         <span className="text-stone-400">
           Click adjacent times to book a longer slot
+          {user.role === 'ADMIN' ? ' · Admins can tap a booked slot to cancel it' : ''}
         </span>
         <button onClick={() => loadAvailability()} className="ml-auto btn-ghost text-xs">
           Refresh
@@ -210,6 +226,7 @@ export function Dashboard({ user }: DashboardProps) {
               user={user}
               maxDurationMinutes={maxDurationMinutes}
               onBookRange={handleBookRange}
+              onCancelBooking={user.role === 'ADMIN' ? handleCancelBooking : undefined}
             />
           ))}
         </div>

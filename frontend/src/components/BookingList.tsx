@@ -80,11 +80,10 @@ export function BookingList({
 }: BookingListProps) {
   const canCancelBooking = (booking: Booking) => {
     if (booking.status !== 'BOOKED') return false;
-    const bookingDateTime = new Date(`${booking.date}T${booking.startTime}:00+05:30`);
-    if (bookingDateTime < new Date()) return false;
     if (user.role === 'ADMIN') return true;
-    if (booking.bookedByEmail === user.email) return true;
-    return false;
+    if (booking.bookedByEmail !== user.email) return false;
+    const bookingDateTime = new Date(`${booking.date}T${booking.startTime}:00+05:30`);
+    return bookingDateTime >= new Date();
   };
 
   const statusClass = (status: string) => {

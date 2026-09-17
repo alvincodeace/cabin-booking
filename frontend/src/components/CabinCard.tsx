@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Cabin, TimeSlot, User } from '../types';
+import type { Booking, Cabin, TimeSlot, User } from '../types';
 
 interface CabinCardProps {
   cabin: Cabin;
@@ -8,6 +8,7 @@ interface CabinCardProps {
   user: User;
   maxDurationMinutes: number;
   onBookRange: (cabin: Cabin, startTime: string, endTime: string) => void;
+  onCancelBooking?: (booking: Booking) => void;
 }
 
 function nowInKolkata() {
@@ -31,7 +32,15 @@ function slotEnd(slot: TimeSlot) {
   return `${String(Math.floor((timeToMinutes(slot.time) + 30) / 60)).padStart(2, '0')}:${String((timeToMinutes(slot.time) + 30) % 60).padStart(2, '0')}`;
 }
 
-export function CabinCard({ cabin, slots, date, user: _user, maxDurationMinutes, onBookRange }: CabinCardProps) {
+export function CabinCard({
+  cabin,
+  slots,
+  date,
+  user,
+  maxDurationMinutes,
+  onBookRange,
+  onCancelBooking,
+}: CabinCardProps) {
   const [range, setRange] = useState<{ from: number; to: number } | null>(null);
   const [limitMessage, setLimitMessage] = useState<string | null>(null);
 
@@ -53,8 +62,14 @@ export function CabinCard({ cabin, slots, date, user: _user, maxDurationMinutes,
 
   const slotLabel = (slot: TimeSlot) => `${slot.time}–${slotEnd(slot)}`;
   const slotIsPast = (slot: TimeSlot) => isPastSlot(date, slot.time);
-  const slotIsDisabled = (slot: TimeSlot) =>
-    cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE' || slotIsPast(slot);
+  const canAdminCancel = (slot: TimeSlot) =>
+    user.role === 'ADMIN' &&
+    slot.status === 'BOOKED' &&
+    Boolean(slot.booking?.bookingId) &&
+    Boolean(onCancelBooking);
+  const slotIsBookable = (slot: TimeSlot) =>
+    cabin.status === 'ACTIVE' && slot.status === 'AVAILABLE' && !slotIsPast(slot);
+  const slotIsDisabled = (slot: TimeSlot) => !slotIsBookable(slot) && !canAdminCancel(slot);
 
   const isSelected = (index: number) =>
     Boolean(range && index >= range.from && index <= range.to);
@@ -64,11 +79,13 @@ export function CabinCard({ cabin, slots, date, user: _user, maxDurationMinutes,
     if (cabin.status === 'INACTIVE') {
       return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
     }
-    if (isSelected(index) && !slotIsDisabled(slot)) {
+    if (isSelected(index) && slotIsBookable(slot)) {
       return `${base} bg-teal-800 text-white cursor-pointer`;
     }
     if (slot.status === 'BOOKED') {
-      return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
+      return canAdminCancel(slot)
+        ? `${base} bg-stone-100 text-stone-500 hover:bg-red-50 hover:text-red-800 cursor-pointer`
+        : `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
     }
     if (slot.status === 'LOCKED') {
       return slot.isOwnLock
@@ -84,7 +101,9 @@ export function CabinCard({ cabin, slots, date, user: _user, maxDurationMinutes,
   const slotTitle = (slot: TimeSlot) => {
     const label = slotLabel(slot);
     if (slot.status === 'BOOKED' && slot.booking) {
-      return `${label} · booked by ${slot.booking.bookedBy}`;
+      return canAdminCancel(slot)
+        ? `${label} · booked by ${slot.booking.bookedBy} · click to cancel`
+        : `${label} · booked by ${slot.booking.bookedBy}`;
     }
     if (slot.status === 'LOCKED') {
       return slot.isOwnLock ? `${label} · held by you` : `${label} · held by someone else`;
@@ -100,7 +119,7 @@ export function CabinCard({ cabin, slots, date, user: _user, maxDurationMinutes,
 
   const canSelectRange = (from: number, to: number) => {
     const slice = slots.slice(from, to + 1);
-    if (!slice.length || slice.some((slot) => slotIsDisabled(slot))) {
+    if (!slice.length || slice.some((slot) => !slotIsBookable(slot))) {
       return false;
     }
     const duration = timeToMinutes(slotEnd(slots[to])) - timeToMinutes(slots[from].time);
@@ -109,7 +128,11 @@ export function CabinCard({ cabin, slots, date, user: _user, maxDurationMinutes,
 
   const handleSlotClick = (index: number) => {
     const slot = slots[index];
-    if (slotIsDisabled(slot)) return;
+    if (canAdminCancel(slot) && slot.booking) {
+      onCancelBooking?.(slot.booking);
+      return;
+    }
+    if (!slotIsBookable(slot)) return;
     setLimitMessage(null);
 
     if (range && range.from === index && range.to === index) {
