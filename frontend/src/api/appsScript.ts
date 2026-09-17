@@ -159,11 +159,8 @@ export async function updateCabin(cabin: Cabin): Promise<Cabin> {
   return apiCall<Cabin>('updateCabin', cabin);
 }
 
-export async function updateCabinStatus(
-  cabinId: string,
-  status: 'ACTIVE' | 'INACTIVE'
-): Promise<void> {
-  return apiCall<void>('updateCabinStatus', { cabinId, status });
+export async function deleteCabin(cabinId: string): Promise<void> {
+  return apiCall<void>('deleteCabin', { cabinId });
 }
 
 export async function getAllUsers(): Promise<User[]> {

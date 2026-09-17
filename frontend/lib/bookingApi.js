@@ -797,21 +797,94 @@ export async function handleBookingApi(req, res) {
         if (!requireAdmin(user)) {
           return fail(res, 'UNAUTHORIZED', 'Admin access required');
         }
+        const cabinName = String(payload.cabinName || '').trim();
+        if (!cabinName) {
+          return fail(res, 'INVALID_INPUT', 'Cabin name is required');
+        }
         const cabinId = generateId('CABIN');
         const { data, error } = await supabase
           .from('cabins')
           .insert({
             cabin_id: cabinId,
-            cabin_name: payload.cabinName,
+            cabin_name: cabinName,
             location: payload.location || '',
-            capacity: payload.capacity || 4,
+            capacity: Number(payload.capacity || 4),
             description: payload.description || '',
-            status: 'ACTIVE',
+            status: payload.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
           })
           .select()
           .single();
         if (error) throw error;
         return ok(res, mapCabin(data));
+      }
+
+      case 'updateCabin': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const cabinId = payload.cabinId;
+        const cabinName = String(payload.cabinName || '').trim();
+        if (!cabinId || !cabinName) {
+          return fail(res, 'INVALID_INPUT', 'Cabin id and name are required');
+        }
+        const { data, error } = await supabase
+          .from('cabins')
+          .update({
+            cabin_name: cabinName,
+            location: payload.location || '',
+            capacity: Number(payload.capacity || 4),
+            description: payload.description || '',
+            status: payload.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+          })
+          .eq('cabin_id', cabinId)
+          .select()
+          .single();
+        if (error) throw error;
+        if (!data) {
+          return fail(res, 'CABIN_NOT_FOUND', 'Cabin not found');
+        }
+        return ok(res, mapCabin(data));
+      }
+
+      case 'deleteCabin': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const cabinId = payload.cabinId;
+        if (!cabinId) {
+          return fail(res, 'INVALID_INPUT', 'Cabin id is required');
+        }
+
+        const today = todayInKolkata();
+        const { data: futureBookings, error: futureError } = await supabase
+          .from('bookings')
+          .select('booking_id')
+          .eq('cabin_id', cabinId)
+          .eq('status', 'BOOKED')
+          .gte('date', today);
+        if (futureError) throw futureError;
+        if (futureBookings && futureBookings.length > 0) {
+          return fail(
+            res,
+            'CABIN_HAS_BOOKINGS',
+            'Cancel upcoming bookings for this cabin before deleting it'
+          );
+        }
+
+        const { data: cabinBookings } = await supabase
+          .from('bookings')
+          .select('booking_id')
+          .eq('cabin_id', cabinId);
+        const bookingIds = (cabinBookings || []).map((row) => row.booking_id);
+        if (bookingIds.length) {
+          await supabase.from('booking_attendees').delete().in('booking_id', bookingIds);
+          await supabase.from('notifications').delete().in('booking_id', bookingIds);
+          await supabase.from('bookings').delete().eq('cabin_id', cabinId);
+        }
+        await supabase.from('locks').delete().eq('cabin_id', cabinId);
+        const { error } = await supabase.from('cabins').delete().eq('cabin_id', cabinId);
+        if (error) throw error;
+        return ok(res, null);
       }
 
       case 'createUser': {
