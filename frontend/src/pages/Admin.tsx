@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { User, UserRole, Booking, Cabin, AuditLog } from '../types';
 import {
   getTodayStats,
@@ -205,6 +205,13 @@ export function Admin({ user }: AdminProps) {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditSetupRequired, setAuditSetupRequired] = useState(false);
+  const [bookingSearch, setBookingSearch] = useState('');
+  const [bookingStatus, setBookingStatus] = useState('');
+  const [bookingDate, setBookingDate] = useState('');
+  const [bookingCabin, setBookingCabin] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState('');
 
   useEffect(() => {
     loadData();
@@ -499,6 +506,71 @@ export function Admin({ user }: AdminProps) {
     { id: 'settings', label: 'Settings' },
   ] as const;
 
+  const filteredBookings = useMemo(() => {
+    const query = bookingSearch.trim().toLowerCase();
+    return bookings.filter((booking) => {
+      if (bookingStatus && booking.status !== bookingStatus) {
+        return false;
+      }
+      if (bookingDate && booking.date !== bookingDate) {
+        return false;
+      }
+      if (bookingCabin && booking.cabinId !== bookingCabin) {
+        return false;
+      }
+      if (query) {
+        const haystack = [
+          booking.cabinName,
+          booking.bookedBy,
+          booking.bookedByEmail,
+          booking.department,
+          booking.purpose,
+          ...(booking.attendees || []).map((attendee) => `${attendee.name} ${attendee.email}`),
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(query)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [bookings, bookingSearch, bookingStatus, bookingDate, bookingCabin]);
+
+  const bookingCabinOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const booking of bookings) {
+      if (booking.cabinId) {
+        options.set(booking.cabinId, booking.cabinName);
+      }
+    }
+    return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1]));
+  }, [bookings]);
+
+  const filteredUsers = useMemo(() => {
+    const query = userSearch.trim().toLowerCase();
+    return users.filter((item) => {
+      if (userRoleFilter && item.role !== userRoleFilter) {
+        return false;
+      }
+      if (userStatusFilter === 'active' && !item.active) {
+        return false;
+      }
+      if (userStatusFilter === 'inactive' && item.active) {
+        return false;
+      }
+      if (query) {
+        const haystack = [item.name, item.email, item.department, item.employeeId, item.role]
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(query)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [users, userSearch, userRoleFilter, userStatusFilter]);
+
   return (
     <div className="page-wrap">
       <div className="mb-6">
@@ -549,16 +621,18 @@ export function Admin({ user }: AdminProps) {
                 </p>
               </div>
               <div className="card p-5">
-                <h3 className="text-sm text-stone-500">Available today</h3>
+                <h3 className="text-sm text-stone-500">Cabins free now</h3>
                 <p className="mt-2 text-3xl font-semibold tracking-tight text-emerald-700">
                   {stats.availableToday}
                 </p>
+                <p className="mt-1 text-xs text-stone-400">Active cabins with a remaining slot today</p>
               </div>
               <div className="card p-5">
                 <h3 className="text-sm text-stone-500">Today’s bookings</h3>
                 <p className="mt-2 text-3xl font-semibold tracking-tight text-teal-800">
                   {stats.todayBookings}
                 </p>
+                <p className="mt-1 text-xs text-stone-400">Booked meetings for today, not cancelled</p>
               </div>
               <div className="card p-5">
                 <h3 className="text-sm text-stone-500">Active holds</h3>
@@ -572,22 +646,64 @@ export function Admin({ user }: AdminProps) {
           {/* Bookings Tab */}
           {activeTab === 'bookings' && (
             <div className="card overflow-hidden">
-              <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">All bookings</h2>
-                  <p className="text-sm text-stone-500 mt-0.5">Includes booked and cancelled</p>
+              <div className="p-4 border-b border-gray-200 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">All bookings</h2>
+                    <p className="text-sm text-stone-500 mt-0.5">
+                      Includes booked and cancelled
+                      {bookings.length
+                        ? ` · showing ${filteredBookings.length} of ${bookings.length}`
+                        : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => downloadBookingsCsv(filteredBookings, 'all-bookings')}
+                    disabled={filteredBookings.length === 0}
+                    className="btn-secondary text-sm"
+                  >
+                    Export CSV
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => downloadBookingsCsv(bookings, 'all-bookings')}
-                  disabled={bookings.length === 0}
-                  className="btn-secondary text-sm"
-                >
-                  Export CSV
-                </button>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <input
+                    value={bookingSearch}
+                    onChange={(event) => setBookingSearch(event.target.value)}
+                    placeholder="Search cabin, person, purpose"
+                    className="input"
+                  />
+                  <input
+                    type="date"
+                    value={bookingDate}
+                    onChange={(event) => setBookingDate(event.target.value)}
+                    className="input"
+                  />
+                  <select
+                    value={bookingCabin}
+                    onChange={(event) => setBookingCabin(event.target.value)}
+                    className="input"
+                  >
+                    <option value="">All cabins</option>
+                    {bookingCabinOptions.map(([cabinId, cabinName]) => (
+                      <option key={cabinId} value={cabinId}>
+                        {cabinName}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={bookingStatus}
+                    onChange={(event) => setBookingStatus(event.target.value)}
+                    className="input"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="BOOKED">Booked</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </div>
               </div>
               <BookingList
-                bookings={bookings}
+                bookings={filteredBookings}
                 user={user}
                 onCancel={handleCancelBooking}
                 showActions={true}
@@ -838,6 +954,38 @@ export function Admin({ user }: AdminProps) {
                   </div>
                 </div>
               </div>
+              <div className="px-4 py-3 border-b border-gray-200 grid gap-2 sm:grid-cols-3">
+                <input
+                  value={userSearch}
+                  onChange={(event) => setUserSearch(event.target.value)}
+                  placeholder="Search name, email, department"
+                  className="input"
+                />
+                <select
+                  value={userRoleFilter}
+                  onChange={(event) => setUserRoleFilter(event.target.value)}
+                  className="input"
+                >
+                  <option value="">All roles</option>
+                  {USER_ROLES.map((role) => (
+                    <option key={role} value={role}>
+                      {role.replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={userStatusFilter}
+                  onChange={(event) => setUserStatusFilter(event.target.value)}
+                  className="input"
+                >
+                  <option value="">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <p className="px-4 py-2 text-xs text-stone-500 border-b border-gray-100">
+                Showing {filteredUsers.length} of {users.length}
+              </p>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -863,7 +1011,7 @@ export function Admin({ user }: AdminProps) {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {users.map((u) => (
+                    {filteredUsers.map((u) => (
                       <tr key={u.email}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {u.name}

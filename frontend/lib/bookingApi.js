@@ -1083,18 +1083,57 @@ export async function handleBookingApi(req, res) {
 
       case 'todayStats': {
         const today = todayInKolkata();
-        const [{ data: cabins }, { data: bookings }, { count: activeLocks }] = await Promise.all([
-          supabase.from('cabins').select('*'),
-          supabase.from('bookings').select('*').eq('date', today).eq('status', 'BOOKED'),
-          supabase
-            .from('locks')
-            .select('lock_id', { count: 'exact', head: true })
-            .gt('expires_at', new Date().toISOString()),
-        ]);
+        const [{ data: cabins }, { data: bookings }, { data: locks }, { count: activeLocks }] =
+          await Promise.all([
+            supabase.from('cabins').select('*'),
+            supabase.from('bookings').select('*').eq('date', today).eq('status', 'BOOKED'),
+            supabase
+              .from('locks')
+              .select('*')
+              .eq('date', today)
+              .gt('expires_at', new Date().toISOString()),
+            supabase
+              .from('locks')
+              .select('lock_id', { count: 'exact', head: true })
+              .gt('expires_at', new Date().toISOString()),
+          ]);
+        const timeSlots = generateTimeSlots();
+        const todayBookings = (bookings || []).filter(
+          (booking) => formatDateValue(booking.date) === today && booking.status === 'BOOKED'
+        );
+        const availableToday = (cabins || []).filter((cabin) => {
+          if (cabin.status !== 'ACTIVE') {
+            return false;
+          }
+          for (let index = 0; index < timeSlots.length - 1; index += 1) {
+            const startTime = timeSlots[index];
+            const endTime = timeSlots[index + 1];
+            if (isPastSlot(today, startTime)) {
+              continue;
+            }
+            const taken = todayBookings.some(
+              (booking) =>
+                booking.cabin_id === cabin.cabin_id &&
+                doTimesOverlap(startTime, endTime, booking.start_time, booking.end_time)
+            );
+            if (taken) {
+              continue;
+            }
+            const held = (locks || []).some(
+              (lock) =>
+                lock.cabin_id === cabin.cabin_id &&
+                doTimesOverlap(startTime, endTime, lock.start_time, lock.end_time)
+            );
+            if (!held) {
+              return true;
+            }
+          }
+          return false;
+        }).length;
         return ok(res, {
           totalCabins: (cabins || []).length,
-          availableToday: (cabins || []).filter((cabin) => cabin.status === 'ACTIVE').length,
-          todayBookings: (bookings || []).length,
+          availableToday,
+          todayBookings: todayBookings.length,
           activeLocks: activeLocks || 0,
         });
       }
