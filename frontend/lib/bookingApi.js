@@ -192,67 +192,79 @@ async function lookupSlackUserId(email) {
   return data.user?.id || null;
 }
 
-async function sendSlackDm(slackUserId, text) {
+async function sendSlackDm(email, text) {
   const token = process.env.SLACK_BOT_TOKEN;
-  if (!token) {
+  if (!token || !email) {
     return;
   }
+  const slackUserId = await lookupSlackUserId(email);
+  if (!slackUserId) {
+    return;
+  }
+
+  const openResponse = await fetch('https://slack.com/api/conversations.open', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ users: slackUserId }),
+  });
+  const openData = await openResponse.json();
+  if (!openData.ok || !openData.channel?.id) {
+    console.error('Slack DM open failed:', openData.error, email);
+    return;
+  }
+
   const response = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ channel: slackUserId, text }),
+    body: JSON.stringify({ channel: openData.channel.id, text }),
   });
   const data = await response.json();
   if (!data.ok) {
-    console.error('Slack DM failed:', data.error);
+    console.error('Slack DM failed:', data.error, email);
   }
 }
 
-async function sendSlackWebhook(text) {
-  const url = process.env.SLACK_WEBHOOK_URL;
-  if (!url) {
-    return;
-  }
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-}
-
-function bookingSlackText(booking, attendees, action) {
-  const memberList =
-    attendees.length > 0
-      ? attendees.map((attendee) => `${attendee.name} (${attendee.email})`).join(', ')
-      : 'None';
+function bookingSlackText(booking, action) {
   if (action === 'cancelled') {
-    return `*Cabin booking cancelled*\n*${booking.cabinName}* · ${booking.date} ${booking.startTime}–${booking.endTime}\nBooked by: ${booking.bookedBy}\nMembers: ${memberList}`;
+    return `Cabin booking cancelled: *${booking.cabinName}* on ${booking.date} ${booking.startTime}–${booking.endTime} (booked by ${booking.bookedBy}).`;
   }
-  return `*Cabin booked*\n*${booking.cabinName}* · ${booking.date} ${booking.startTime}–${booking.endTime}\nBooked by: ${booking.bookedBy}\nPurpose: ${booking.purpose}\nMembers: ${memberList}`;
+  return `${booking.bookedBy} added you to a cabin booking: *${booking.cabinName}* on ${booking.date} ${booking.startTime}–${booking.endTime}. Purpose: ${booking.purpose}`;
 }
 
-async function notifySlack(booking, attendees, action = 'booked') {
+function uniqueRecipientEmails(people, skipEmails = []) {
+  const skip = new Set(skipEmails.map((email) => String(email).toLowerCase()));
+  const emails = new Set();
+  for (const person of people) {
+    const email = String(person?.email || '').toLowerCase();
+    if (email && !skip.has(email)) {
+      emails.add(email);
+    }
+  }
+  return [...emails];
+}
+
+async function notifySlack(booking, attendees, action = 'booked', skipEmails = []) {
   try {
-    const text = bookingSlackText(booking, attendees, action);
-    await sendSlackWebhook(text);
-
-    const dmText =
-      action === 'cancelled'
-        ? `The cabin booking for ${booking.cabinName} on ${booking.date} ${booking.startTime}–${booking.endTime} was cancelled.`
-        : `${booking.bookedBy} added you to a cabin booking: ${booking.cabinName} on ${booking.date} ${booking.startTime}–${booking.endTime}. Purpose: ${booking.purpose}`;
-
-    const recipients = action === 'cancelled' ? attendees : attendees;
-    await Promise.all(
-      recipients.map(async (attendee) => {
-        const slackUserId = await lookupSlackUserId(attendee.email);
-        if (slackUserId) {
-          await sendSlackDm(slackUserId, dmText);
-        }
-      })
+    const recipients = uniqueRecipientEmails(
+      [
+        ...(attendees || []),
+        action === 'cancelled' && booking.bookedByEmail
+          ? { email: booking.bookedByEmail }
+          : null,
+      ],
+      skipEmails
     );
+    if (!recipients.length) {
+      return;
+    }
+    const text = bookingSlackText(booking, action);
+    await Promise.all(recipients.map((email) => sendSlackDm(email, text)));
   } catch (error) {
     console.error('Slack notification failed:', error);
   }
@@ -704,7 +716,7 @@ export async function handleBookingApi(req, res) {
           }
         }
 
-        await notifySlack(booking, booking.attendees || [], 'booked');
+        await notifySlack(booking, booking.attendees || [], 'booked', [user.email]);
         return ok(res, booking);
       }
 
@@ -771,13 +783,14 @@ export async function handleBookingApi(req, res) {
           startTime: booking.start_time,
           endTime: booking.end_time,
           bookedBy: booking.booked_by,
+          bookedByEmail: booking.booked_by_email,
           purpose: booking.purpose,
         };
         const slackAttendees = (attendeeRows || []).map((row) => ({
           email: row.user_email,
           name: row.name,
         }));
-        await notifySlack(cancelledBooking, slackAttendees, 'cancelled');
+        await notifySlack(cancelledBooking, slackAttendees, 'cancelled', [user.email]);
         return ok(res, null);
       }
 
