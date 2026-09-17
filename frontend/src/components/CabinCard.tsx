@@ -7,8 +7,8 @@ interface CabinCardProps {
   onSlotClick: (cabin: Cabin, slot: TimeSlot) => void;
 }
 
-export function CabinCard({ cabin, slots, user, onSlotClick }: CabinCardProps) {
-  // All authenticated users can book
+export function CabinCard({ cabin, slots, user: _user, onSlotClick }: CabinCardProps) {
+  // All authenticated users can book (user parameter kept for interface compatibility)
   const canBook = true;
 
   const getSlotClassName = (slot: TimeSlot) => {
