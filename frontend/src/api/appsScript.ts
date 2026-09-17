@@ -10,7 +10,7 @@ import type {
   Settings,
 } from '../types';
 
-const API_URL = import.meta.env.VITE_APPS_SCRIPT_URL;
+const API_URL = '/api/script';
 const TOKEN_STORAGE_KEY = 'google_access_token';
 
 let accessToken: string | null =
@@ -46,7 +46,7 @@ function getFriendlyErrorMessage(error: unknown): string {
     message.toLowerCase().includes('networkerror') ||
     message.toLowerCase().includes('load failed')
   ) {
-    return 'Cannot reach the booking server. Use the public Apps Script URL (script.google.com/macros/s/.../exec, not /a/macros/) and deploy it as Execute as: Me, Who has access: Anyone.';
+    return 'Cannot reach the booking server. Check that VITE_APPS_SCRIPT_URL is set in Vercel and the Apps Script web app is deployed as Execute as: Me, Who has access: Anyone.';
   }
   return message;
 }
@@ -66,10 +66,6 @@ async function apiCall<T>(
   params?: object,
   method: 'GET' | 'POST' = 'GET'
 ): Promise<T> {
-  if (!API_URL) {
-    throw new Error('VITE_APPS_SCRIPT_URL is not configured');
-  }
-
   const token = getStoredAccessToken();
   const payload: Record<string, unknown> = {
     action,
