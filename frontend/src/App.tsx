@@ -16,13 +16,11 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isGoogleAuth, setIsGoogleAuth] = useState(false);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   const googleLogin = useGoogleLogin({
     onSuccess: (tokenResponse) => {
       setIsLoading(true);
       setError(null);
-      setAccessToken(tokenResponse.access_token);
       setIsGoogleAuth(true);
       loadUserWithToken(tokenResponse.access_token);
     },
@@ -37,7 +35,6 @@ function AppContent() {
     // Check if we have a stored access token
     const storedToken = localStorage.getItem('google_access_token');
     if (storedToken) {
-      setAccessToken(storedToken);
       setIsGoogleAuth(true);
       loadUserWithToken(storedToken);
     } else {
