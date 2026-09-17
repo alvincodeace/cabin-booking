@@ -66,8 +66,10 @@ function doTimesOverlap(start1, end1, start2, end2) {
 
 function generateTimeSlots() {
   const slots = [];
-  for (let hour = 9; hour <= 17; hour++) {
-    slots.push(`${String(hour).padStart(2, '0')}:00`);
+  for (let minutes = 9 * 60; minutes <= 17 * 60; minutes += 30) {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    slots.push(`${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`);
   }
   return slots;
 }
@@ -724,7 +726,7 @@ export async function handleBookingApi(req, res) {
           for (let i = 0; i < timeSlots.length - 1; i++) {
             const startTime = timeSlots[i];
             const endTime = timeSlots[i + 1];
-            const slot = { time: startTime, status: 'AVAILABLE' };
+            const slot = { time: startTime, endTime, status: 'AVAILABLE' };
             if (cabin.status !== 'ACTIVE') {
               slot.status = 'DISABLED';
             } else {

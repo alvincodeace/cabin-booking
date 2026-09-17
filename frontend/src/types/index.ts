@@ -75,6 +75,7 @@ export interface Settings {
 
 export interface TimeSlot {
   time: string;
+  endTime?: string;
   status: 'AVAILABLE' | 'BOOKED' | 'LOCKED' | 'DISABLED';
   booking?: Booking;
   lock?: BookingLock;

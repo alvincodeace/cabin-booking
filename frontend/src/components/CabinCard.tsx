@@ -8,8 +8,11 @@ interface CabinCardProps {
 }
 
 export function CabinCard({ cabin, slots, user: _user, onSlotClick }: CabinCardProps) {
+  const slotLabel = (slot: TimeSlot) =>
+    slot.endTime ? `${slot.time}–${slot.endTime}` : slot.time;
+
   const getSlotClassName = (slot: TimeSlot) => {
-    const base = 'h-10 rounded-xl text-sm font-medium transition-colors';
+    const base = 'min-h-10 px-1 py-2 rounded-xl text-[11px] sm:text-xs font-medium leading-tight transition-colors';
     if (cabin.status === 'INACTIVE') {
       return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
     }
@@ -28,13 +31,14 @@ export function CabinCard({ cabin, slots, user: _user, onSlotClick }: CabinCardP
   };
 
   const slotTitle = (slot: TimeSlot) => {
+    const label = slotLabel(slot);
     if (slot.status === 'BOOKED' && slot.booking) {
-      return `${slot.time} · booked by ${slot.booking.bookedBy}`;
+      return `${label} · booked by ${slot.booking.bookedBy}`;
     }
     if (slot.status === 'LOCKED') {
-      return slot.isOwnLock ? `${slot.time} · held by you` : `${slot.time} · held by someone else`;
+      return slot.isOwnLock ? `${label} · held by you` : `${label} · held by someone else`;
     }
-    return slot.status === 'AVAILABLE' ? `${slot.time} · available` : slot.time;
+    return slot.status === 'AVAILABLE' ? `${label} · available` : label;
   };
 
   const handleSlotClick = (slot: TimeSlot) => {
@@ -67,7 +71,7 @@ export function CabinCard({ cabin, slots, user: _user, onSlotClick }: CabinCardP
       {cabin.description && (
         <p className="mb-4 text-sm text-stone-500 leading-relaxed">{cabin.description}</p>
       )}
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
         {slots.map((slot, index) => (
           <button
             key={`${slot.time}-${index}`}
@@ -77,7 +81,7 @@ export function CabinCard({ cabin, slots, user: _user, onSlotClick }: CabinCardP
             className={getSlotClassName(slot)}
             disabled={cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE'}
           >
-            {slot.time}
+            {slotLabel(slot)}
           </button>
         ))}
       </div>

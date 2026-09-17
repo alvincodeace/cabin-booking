@@ -209,11 +209,14 @@ export function Dashboard({ user }: DashboardProps) {
           cabin={selectedSlot.cabin}
           date={selectedDate}
           startTime={selectedSlot.slot.time}
-          endTime={(() => {
-            const [hours, minutes] = selectedSlot.slot.time.split(':');
-            const endHour = (parseInt(hours) + 1).toString().padStart(2, '0');
-            return `${endHour}:${minutes}`;
-          })()}
+          endTime={
+            selectedSlot.slot.endTime ||
+            (() => {
+              const [hours, minutes] = selectedSlot.slot.time.split(':').map(Number);
+              const total = hours * 60 + minutes + 30;
+              return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+            })()
+          }
           onClose={() => setSelectedSlot(null)}
           onSuccess={handleBookingSuccess}
           organizerEmail={user.email}
