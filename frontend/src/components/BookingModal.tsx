@@ -253,7 +253,7 @@ export function BookingModal({
                 <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
                   {filteredMembers.length === 0 ? (
                     <div className="px-3 py-2 text-sm text-gray-500">
-                      No matching members. People appear here after they sign in once.
+                      No matching members. Ask an admin to add people in Admin → Users.
                     </div>
                   ) : (
                     filteredMembers.map((member) => (

@@ -175,35 +175,87 @@ async function createNotifications(supabase, rows) {
   if (error) throw error;
 }
 
-async function sendInviteEmails(booking, attendees) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
-  if (!apiKey || !from || !attendees.length) {
+async function lookupSlackUserId(email) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
+    return null;
+  }
+  const response = await fetch(
+    `https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const data = await response.json();
+  if (!data.ok) {
+    console.error('Slack lookup failed:', data.error, email);
+    return null;
+  }
+  return data.user?.id || null;
+}
+
+async function sendSlackDm(slackUserId, text) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
     return;
   }
+  const response = await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ channel: slackUserId, text }),
+  });
+  const data = await response.json();
+  if (!data.ok) {
+    console.error('Slack DM failed:', data.error);
+  }
+}
 
-  const subject = `Cabin booked: ${booking.cabinName} on ${booking.date}`;
-  const text = `${booking.bookedBy} booked ${booking.cabinName} on ${booking.date} from ${booking.startTime} to ${booking.endTime}.\nPurpose: ${booking.purpose}`;
+async function sendSlackWebhook(text) {
+  const url = process.env.SLACK_WEBHOOK_URL;
+  if (!url) {
+    return;
+  }
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
 
-  await Promise.all(
-    attendees.map((attendee) =>
-      fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from,
-          to: attendee.email,
-          subject,
-          text,
-        }),
-      }).catch((error) => {
-        console.error('Email send failed:', error);
+function bookingSlackText(booking, attendees, action) {
+  const memberList =
+    attendees.length > 0
+      ? attendees.map((attendee) => `${attendee.name} (${attendee.email})`).join(', ')
+      : 'None';
+  if (action === 'cancelled') {
+    return `*Cabin booking cancelled*\n*${booking.cabinName}* · ${booking.date} ${booking.startTime}–${booking.endTime}\nBooked by: ${booking.bookedBy}\nMembers: ${memberList}`;
+  }
+  return `*Cabin booked*\n*${booking.cabinName}* · ${booking.date} ${booking.startTime}–${booking.endTime}\nBooked by: ${booking.bookedBy}\nPurpose: ${booking.purpose}\nMembers: ${memberList}`;
+}
+
+async function notifySlack(booking, attendees, action = 'booked') {
+  try {
+    const text = bookingSlackText(booking, attendees, action);
+    await sendSlackWebhook(text);
+
+    const dmText =
+      action === 'cancelled'
+        ? `The cabin booking for ${booking.cabinName} on ${booking.date} ${booking.startTime}–${booking.endTime} was cancelled.`
+        : `${booking.bookedBy} added you to a cabin booking: ${booking.cabinName} on ${booking.date} ${booking.startTime}–${booking.endTime}. Purpose: ${booking.purpose}`;
+
+    const recipients = action === 'cancelled' ? attendees : attendees;
+    await Promise.all(
+      recipients.map(async (attendee) => {
+        const slackUserId = await lookupSlackUserId(attendee.email);
+        if (slackUserId) {
+          await sendSlackDm(slackUserId, dmText);
+        }
       })
-    )
-  );
+    );
+  } catch (error) {
+    console.error('Slack notification failed:', error);
+  }
 }
 
 async function verifyGoogleToken(accessToken) {
@@ -234,7 +286,7 @@ async function verifyGoogleToken(accessToken) {
   };
 }
 
-async function getOrCreateUser(supabase, profile) {
+async function getRegisteredUser(supabase, profile) {
   const { data: existing, error: existingError } = await supabase
     .from('users')
     .select('*')
@@ -245,42 +297,25 @@ async function getOrCreateUser(supabase, profile) {
     throw existingError;
   }
 
-  if (existing) {
-    if (!existing.active) {
-      return { error: { code: 'USER_INACTIVE', message: 'User account is inactive' } };
-    }
-    if (!existing.name && profile.name) {
-      await supabase.from('users').update({ name: profile.name }).eq('email', profile.email);
-      existing.name = profile.name;
-    }
-    return { user: mapUser(existing) };
+  if (!existing) {
+    return {
+      error: {
+        code: 'USER_NOT_FOUND',
+        message: 'Your account is not in the system. Ask an admin to add your email first.',
+      },
+    };
   }
 
-  const { count } = await supabase
-    .from('users')
-    .select('email', { count: 'exact', head: true })
-    .eq('role', 'ADMIN');
-
-  const role = profile.email === 'alvinksabu@codeace.com' || !count ? 'ADMIN' : 'EMPLOYEE';
-
-  const { data: created, error: createError } = await supabase
-    .from('users')
-    .insert({
-      email: profile.email,
-      name: profile.name,
-      employee_id: '',
-      department: '',
-      role,
-      active: true,
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    throw createError;
+  if (!existing.active) {
+    return { error: { code: 'USER_INACTIVE', message: 'User account is inactive' } };
   }
 
-  return { user: mapUser(created) };
+  if (profile.name && existing.name !== profile.name) {
+    await supabase.from('users').update({ name: profile.name }).eq('email', profile.email);
+    existing.name = profile.name;
+  }
+
+  return { user: mapUser(existing) };
 }
 
 async function getSettings(supabase) {
@@ -352,7 +387,7 @@ export async function handleBookingApi(req, res) {
     }
 
     const supabase = getSupabase();
-    const current = await getOrCreateUser(supabase, profile);
+    const current = await getRegisteredUser(supabase, profile);
     if (current.error) {
       return fail(res, current.error.code, current.error.message);
     }
@@ -665,11 +700,11 @@ export async function handleBookingApi(req, res) {
                 message: `${booking.date} ${booking.startTime}–${booking.endTime}. ${booking.purpose}`,
               }))
             );
-            await sendInviteEmails(booking, attendees);
             booking.attendees = attendees;
           }
         }
 
+        await notifySlack(booking, booking.attendees || [], 'booked');
         return ok(res, booking);
       }
 
@@ -729,6 +764,20 @@ export async function handleBookingApi(req, res) {
             message: `${formatDateValue(booking.date)} ${booking.start_time}–${booking.end_time} was cancelled by ${user.name}.`,
           }))
         );
+
+        const cancelledBooking = {
+          cabinName: booking.cabin_name,
+          date: formatDateValue(booking.date),
+          startTime: booking.start_time,
+          endTime: booking.end_time,
+          bookedBy: booking.booked_by,
+          purpose: booking.purpose,
+        };
+        const slackAttendees = (attendeeRows || []).map((row) => ({
+          email: row.user_email,
+          name: row.name,
+        }));
+        await notifySlack(cancelledBooking, slackAttendees, 'cancelled');
         return ok(res, null);
       }
 
@@ -763,6 +812,43 @@ export async function handleBookingApi(req, res) {
           .single();
         if (error) throw error;
         return ok(res, mapCabin(data));
+      }
+
+      case 'createUser': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const email = String(payload.email || '').trim().toLowerCase();
+        const name = String(payload.name || '').trim();
+        const role = String(payload.role || 'EMPLOYEE').toUpperCase();
+        if (!email.endsWith('@codeace.com')) {
+          return fail(res, 'INVALID_EMAIL', 'Email must be a @codeace.com address');
+        }
+        if (!name) {
+          return fail(res, 'INVALID_INPUT', 'Name is required');
+        }
+        if (!['ADMIN', 'TEAM_LEAD', 'EMPLOYEE'].includes(role)) {
+          return fail(res, 'INVALID_ROLE', 'Role must be ADMIN, TEAM_LEAD, or EMPLOYEE');
+        }
+        const { data, error } = await supabase
+          .from('users')
+          .insert({
+            email,
+            name,
+            employee_id: payload.employeeId || '',
+            department: payload.department || '',
+            role,
+            active: true,
+          })
+          .select()
+          .single();
+        if (error) {
+          if (String(error.message).includes('duplicate') || error.code === '23505') {
+            return fail(res, 'USER_EXISTS', 'A user with this email already exists');
+          }
+          throw error;
+        }
+        return ok(res, mapUser(data));
       }
 
       case 'updateUserStatus': {

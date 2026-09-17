@@ -10,6 +10,7 @@ import {
   updateUserStatus,
   getSettings,
   updateSettings,
+  createUser,
 } from '../api/appsScript';
 import { BookingList } from '../components/BookingList';
 
@@ -36,6 +37,15 @@ export function Admin({ user }: AdminProps) {
     advanceBookingDays: 30,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [newUser, setNewUser] = useState({
+    name: '',
+    email: '',
+    department: '',
+    employeeId: '',
+    role: 'EMPLOYEE' as User['role'],
+  });
+  const [userFormError, setUserFormError] = useState<string | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -103,12 +113,43 @@ export function Admin({ user }: AdminProps) {
     }
   };
 
+  const handleCreateUser = async () => {
+    setUserFormError(null);
+    if (!newUser.name.trim() || !newUser.email.trim()) {
+      setUserFormError('Name and email are required');
+      return;
+    }
+    setIsSavingUser(true);
+    try {
+      await createUser({
+        email: newUser.email.trim().toLowerCase(),
+        name: newUser.name.trim(),
+        department: newUser.department.trim(),
+        employeeId: newUser.employeeId.trim(),
+        role: newUser.role,
+        active: true,
+      });
+      setNewUser({
+        name: '',
+        email: '',
+        department: '',
+        employeeId: '',
+        role: 'EMPLOYEE',
+      });
+      loadData();
+    } catch (err: unknown) {
+      setUserFormError(err instanceof Error ? err.message : 'Failed to add user');
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
   const handleSaveSettings = async () => {
     try {
       await updateSettings(settings);
       alert('Settings updated successfully');
-    } catch (err: any) {
-      alert(err.message || 'Failed to update settings');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update settings');
     }
   };
 
@@ -285,6 +326,50 @@ export function Admin({ user }: AdminProps) {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">Users</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Add employees here so they can be invited to meetings even if they never log in.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-5">
+                  <input
+                    value={newUser.name}
+                    onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                    placeholder="Name"
+                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <input
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                    placeholder="nina.v@example.com"
+                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <input
+                    value={newUser.department}
+                    onChange={(e) => setNewUser({ ...newUser, department: e.target.value })}
+                    placeholder="Department"
+                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <select
+                    value={newUser.role}
+                    onChange={(e) =>
+                      setNewUser({ ...newUser, role: e.target.value as User['role'] })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="EMPLOYEE">EMPLOYEE</option>
+                    <option value="TEAM_LEAD">TEAM_LEAD</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </select>
+                  <button
+                    onClick={handleCreateUser}
+                    disabled={isSavingUser}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {isSavingUser ? 'Adding...' : 'Add user'}
+                  </button>
+                </div>
+                {userFormError && (
+                  <p className="mt-2 text-sm text-red-600">{userFormError}</p>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
