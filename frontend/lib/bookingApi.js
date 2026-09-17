@@ -98,6 +98,18 @@ function mapCabin(row) {
   };
 }
 
+async function getCabinLocation(supabase, cabinId) {
+  if (!cabinId) {
+    return '';
+  }
+  const { data } = await supabase
+    .from('cabins')
+    .select('location')
+    .eq('cabin_id', cabinId)
+    .maybeSingle();
+  return data?.location || '';
+}
+
 function mapBooking(row) {
   return {
     bookingId: row.booking_id,
@@ -210,29 +222,36 @@ async function createNotifications(supabase, rows) {
   }
 }
 
-async function lookupSlackUserId(email) {
+async function lookupSlackUserId(email, cache = new Map()) {
   const token = process.env.SLACK_BOT_TOKEN;
-  if (!token) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!token || !normalized) {
     return null;
   }
+  if (cache.has(normalized)) {
+    return cache.get(normalized);
+  }
   const response = await fetch(
-    `https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`,
+    `https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(normalized)}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await response.json();
   if (!data.ok) {
-    console.error('Slack lookup failed:', data.error, email);
+    console.error('Slack lookup failed:', data.error, normalized);
+    cache.set(normalized, null);
     return null;
   }
-  return data.user?.id || null;
+  const slackUserId = data.user?.id || null;
+  cache.set(normalized, slackUserId);
+  return slackUserId;
 }
 
-async function sendSlackDm(email, text) {
+async function sendSlackDm(email, text, blocks, cache) {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token || !email) {
     return;
   }
-  const slackUserId = await lookupSlackUserId(email);
+  const slackUserId = await lookupSlackUserId(email, cache);
   if (!slackUserId) {
     return;
   }
@@ -257,7 +276,11 @@ async function sendSlackDm(email, text) {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ channel: openData.channel.id, text }),
+    body: JSON.stringify({
+      channel: openData.channel.id,
+      text,
+      blocks,
+    }),
   });
   const data = await response.json();
   if (!data.ok) {
@@ -265,11 +288,112 @@ async function sendSlackDm(email, text) {
   }
 }
 
-function bookingSlackText(booking, action) {
-  if (action === 'cancelled') {
-    return `Cabin booking cancelled: *${booking.cabinName}* on ${booking.date} ${booking.startTime}–${booking.endTime} (booked by ${booking.bookedBy}).`;
+function minutesToTime(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function formatSlotList(startTime, endTime) {
+  const start = timeToMinutes(startTime);
+  const end = timeToMinutes(endTime);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return `${startTime} - ${endTime}`;
   }
-  return `${booking.bookedBy} added you to a cabin booking: *${booking.cabinName}* on ${booking.date} ${booking.startTime}–${booking.endTime}. Purpose: ${booking.purpose}`;
+  const parts = [];
+  for (let minutes = start; minutes < end; minutes += 30) {
+    parts.push(`${minutesToTime(minutes)} - ${minutesToTime(minutes + 30)}`);
+  }
+  return parts.join(', ');
+}
+
+function slackEscape(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function cabinLabel(booking) {
+  const location = String(booking.location || '').trim();
+  const name = booking.cabinName || 'Cabin';
+  return location ? `${name} (${location})` : name;
+}
+
+function uniquePeople(people) {
+  const seen = new Map();
+  for (const person of people) {
+    const email = String(person?.email || '').toLowerCase();
+    if (!email || seen.has(email)) {
+      continue;
+    }
+    seen.set(email, { email, name: person.name || email });
+  }
+  return [...seen.values()];
+}
+
+async function bookingSlackMessage(booking, attendees, action, cache) {
+  const participants = uniquePeople([
+    booking.bookedByEmail ? { email: booking.bookedByEmail, name: booking.bookedBy } : null,
+    ...(attendees || []),
+  ]);
+  const mentions = [];
+  for (const person of participants) {
+    const slackUserId = await lookupSlackUserId(person.email, cache);
+    mentions.push(slackUserId ? `<@${slackUserId}>` : person.name);
+  }
+  const timeLabel = slackEscape(formatSlotList(booking.startTime, booking.endTime));
+  const cabin = slackEscape(cabinLabel(booking));
+  const meeting = slackEscape(booking.purpose || 'Cabin booking');
+  const leader = slackEscape(booking.bookedBy || '—');
+  const date = slackEscape(booking.date);
+  const participantLine = mentions.join('  ') || '—';
+
+  if (action === 'cancelled') {
+    const text = `Meeting cancelled: ${meeting} · ${cabin} · ${date} ${timeLabel}`;
+    return {
+      text,
+      blocks: [
+        {
+          type: 'header',
+          text: { type: 'plain_text', text: 'Meeting Cancelled', emoji: true },
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `*Meeting:*\n${meeting}` },
+            { type: 'mrkdwn', text: `*Leader:*\n${leader}` },
+            { type: 'mrkdwn', text: `*Cabin:*\n${cabin}` },
+            { type: 'mrkdwn', text: `*Date:*\n${date}` },
+            { type: 'mrkdwn', text: `*Time:*\n${timeLabel}` },
+            { type: 'mrkdwn', text: `*Participants:*\n${participantLine}` },
+          ],
+        },
+      ],
+    };
+  }
+
+  const text = `Meeting booked successfully: ${meeting} · ${cabin} · ${date} ${timeLabel}`;
+  return {
+    text,
+    blocks: [
+      {
+          type: 'header',
+          text: { type: 'plain_text', text: '✅ Meeting Booked Successfully', emoji: true },
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Meeting:*\n${meeting}` },
+          { type: 'mrkdwn', text: `*Leader:*\n${leader}` },
+          { type: 'mrkdwn', text: `*Cabin:*\n${cabin}` },
+          { type: 'mrkdwn', text: `*Date:*\n${date}` },
+          { type: 'mrkdwn', text: `*Time:*\n${timeLabel}` },
+          { type: 'mrkdwn', text: `*Participants:*\n${participantLine}` },
+        ],
+      },
+    ],
+  };
 }
 
 function uniqueRecipientEmails(people, skipEmails = []) {
@@ -288,18 +412,17 @@ async function notifySlack(booking, attendees, action = 'booked', skipEmails = [
   try {
     const recipients = uniqueRecipientEmails(
       [
+        booking.bookedByEmail ? { email: booking.bookedByEmail, name: booking.bookedBy } : null,
         ...(attendees || []),
-        action === 'cancelled' && booking.bookedByEmail
-          ? { email: booking.bookedByEmail }
-          : null,
       ],
       skipEmails
     );
     if (!recipients.length) {
       return;
     }
-    const text = bookingSlackText(booking, action);
-    await Promise.all(recipients.map((email) => sendSlackDm(email, text)));
+    const cache = new Map();
+    const message = await bookingSlackMessage(booking, attendees, action, cache);
+    await Promise.all(recipients.map((email) => sendSlackDm(email, message.text, message.blocks, cache)));
   } catch (error) {
     console.error('Slack notification failed:', error);
   }
@@ -1005,7 +1128,8 @@ export async function handleBookingApi(req, res) {
           }
         }
 
-        await notifySlack(booking, booking.attendees || [], 'booked', [user.email]);
+        booking.location = await getCabinLocation(supabase, booking.cabinId);
+        await notifySlack(booking, booking.attendees || [], 'booked');
         return ok(res, booking);
       }
 
@@ -1068,6 +1192,7 @@ export async function handleBookingApi(req, res) {
 
         const cancelledBooking = {
           cabinName: booking.cabin_name,
+          location: await getCabinLocation(supabase, booking.cabin_id),
           date: formatDateValue(booking.date),
           startTime: booking.start_time,
           endTime: booking.end_time,
