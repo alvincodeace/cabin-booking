@@ -171,6 +171,16 @@ export async function createUser(user: Omit<User, 'createdAt'>): Promise<User> {
   return apiCall<User>('createUser', user);
 }
 
+export async function createUsers(
+  users: Omit<User, 'createdAt'>[]
+): Promise<{
+  created: User[];
+  skipped: { email: string; reason: string }[];
+  errors: { email: string; message: string }[];
+}> {
+  return apiCall('createUsers', { users });
+}
+
 export async function updateUser(user: User): Promise<User> {
   return apiCall<User>('updateUser', user);
 }

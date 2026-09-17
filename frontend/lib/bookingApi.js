@@ -386,6 +386,49 @@ function requireAdmin(user) {
   return user.role === 'ADMIN';
 }
 
+const VALID_ROLES = ['ADMIN', 'TEAM_LEAD', 'EMPLOYEE'];
+
+function nameFromEmail(email) {
+  const localPart = String(email || '').split('@')[0] || '';
+  const words = localPart.split(/[._-]+/).filter(Boolean);
+  if (!words.length) {
+    return '';
+  }
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function normalizeUserInput(payload) {
+  const email = String(payload.email || '').trim().toLowerCase();
+  const name = String(payload.name || '').trim() || nameFromEmail(email);
+  const role = String(payload.role || 'EMPLOYEE').trim().toUpperCase();
+  const department = String(payload.department || '').trim();
+  const employeeId = String(payload.employeeId || payload.employee_id || '').trim();
+
+  if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
+    return { ok: false, message: `Email must be a @${ALLOWED_DOMAIN} address` };
+  }
+  if (!name) {
+    return { ok: false, message: 'Name is required' };
+  }
+  if (!VALID_ROLES.includes(role)) {
+    return { ok: false, message: 'Role must be ADMIN, TEAM_LEAD, or EMPLOYEE' };
+  }
+
+  return {
+    ok: true,
+    user: {
+      email,
+      name,
+      employee_id: employeeId,
+      department,
+      role,
+      active: true,
+    },
+  };
+}
+
 export async function handleBookingApi(req, res) {
   try {
     if (req.method === 'OPTIONS') {
@@ -916,28 +959,13 @@ export async function handleBookingApi(req, res) {
         if (!requireAdmin(user)) {
           return fail(res, 'UNAUTHORIZED', 'Admin access required');
         }
-        const email = String(payload.email || '').trim().toLowerCase();
-        const name = String(payload.name || '').trim();
-        const role = String(payload.role || 'EMPLOYEE').toUpperCase();
-        if (!email.endsWith('@codeace.com')) {
-          return fail(res, 'INVALID_EMAIL', 'Email must be a @codeace.com address');
-        }
-        if (!name) {
-          return fail(res, 'INVALID_INPUT', 'Name is required');
-        }
-        if (!['ADMIN', 'TEAM_LEAD', 'EMPLOYEE'].includes(role)) {
-          return fail(res, 'INVALID_ROLE', 'Role must be ADMIN, TEAM_LEAD, or EMPLOYEE');
+        const normalized = normalizeUserInput(payload);
+        if (!normalized.ok) {
+          return fail(res, 'INVALID_INPUT', normalized.message);
         }
         const { data, error } = await supabase
           .from('users')
-          .insert({
-            email,
-            name,
-            employee_id: payload.employeeId || '',
-            department: payload.department || '',
-            role,
-            active: true,
-          })
+          .insert(normalized.user)
           .select()
           .single();
         if (error) {
@@ -947,6 +975,63 @@ export async function handleBookingApi(req, res) {
           throw error;
         }
         return ok(res, mapUser(data));
+      }
+
+      case 'createUsers': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const rows = Array.isArray(payload.users) ? payload.users : [];
+        if (!rows.length) {
+          return fail(res, 'INVALID_INPUT', 'Paste or upload at least one user');
+        }
+        if (rows.length > 500) {
+          return fail(res, 'INVALID_INPUT', 'Import up to 500 users at a time');
+        }
+
+        const prepared = [];
+        const errors = [];
+        const seenEmails = new Set();
+        for (let index = 0; index < rows.length; index += 1) {
+          const normalized = normalizeUserInput(rows[index] || {});
+          const email = String(rows[index]?.email || '').trim().toLowerCase();
+          if (!normalized.ok) {
+            errors.push({ email, message: normalized.message });
+            continue;
+          }
+          if (seenEmails.has(normalized.user.email)) {
+            errors.push({ email: normalized.user.email, message: 'Duplicate email in this import' });
+            continue;
+          }
+          seenEmails.add(normalized.user.email);
+          prepared.push(normalized.user);
+        }
+
+        const skipped = [];
+        let created = [];
+        if (prepared.length) {
+          const { data: existingRows, error: existingError } = await supabase
+            .from('users')
+            .select('email')
+            .in('email', prepared.map((row) => row.email));
+          if (existingError) throw existingError;
+          const existingEmails = new Set((existingRows || []).map((row) => row.email));
+          const toInsert = [];
+          for (const row of prepared) {
+            if (existingEmails.has(row.email)) {
+              skipped.push({ email: row.email, reason: 'User already exists' });
+            } else {
+              toInsert.push(row);
+            }
+          }
+          if (toInsert.length) {
+            const { data, error } = await supabase.from('users').insert(toInsert).select();
+            if (error) throw error;
+            created = (data || []).map(mapUser);
+          }
+        }
+
+        return ok(res, { created, skipped, errors });
       }
 
       case 'updateUserStatus': {

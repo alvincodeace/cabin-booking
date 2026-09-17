@@ -13,6 +13,7 @@ import {
   getSettings,
   updateSettings,
   createUser,
+  createUsers,
 } from '../api/appsScript';
 import { BookingList } from '../components/BookingList';
 
@@ -21,6 +22,111 @@ interface AdminProps {
 }
 
 type Tab = 'overview' | 'bookings' | 'cabins' | 'users' | 'settings';
+
+type BulkUser = Omit<User, 'createdAt'>;
+
+function detectDelimiter(line: string): string {
+  const comma = (line.match(/,/g) || []).length;
+  const tab = (line.match(/\t/g) || []).length;
+  const semicolon = (line.match(/;/g) || []).length;
+  if (tab >= comma && tab >= semicolon && tab > 0) return '\t';
+  if (semicolon > comma && semicolon > 0) return ';';
+  return ',';
+}
+
+function splitCsvLine(line: string, delimiter: string): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (character === delimiter && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+    } else {
+      current += character;
+    }
+  }
+  values.push(current.trim());
+  return values;
+}
+
+function headerKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function mapHeaderIndex(headers: string[]): Record<string, number> {
+  const mapped: Record<string, number> = {};
+  headers.forEach((header, index) => {
+    const key = headerKey(header);
+    if (['email', 'workemail', 'useremail', 'mail'].includes(key)) mapped.email = index;
+    else if (['name', 'fullname', 'employeename', 'displayname'].includes(key)) mapped.name = index;
+    else if (['firstname', 'first'].includes(key)) mapped.firstName = index;
+    else if (['lastname', 'last', 'surname'].includes(key)) mapped.lastName = index;
+    else if (['department', 'dept', 'team'].includes(key)) mapped.department = index;
+    else if (['role', 'userrole'].includes(key)) mapped.role = index;
+    else if (['employeeid', 'empid', 'id'].includes(key)) mapped.employeeId = index;
+  });
+  return mapped;
+}
+
+function parseBulkUsers(text: string): { users: BulkUser[]; parseErrors: string[] } {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+  const users: BulkUser[] = [];
+  const parseErrors: string[] = [];
+  if (!lines.length) {
+    return { users, parseErrors };
+  }
+
+  const delimiter = detectDelimiter(lines[0]);
+  const firstCells = splitCsvLine(lines[0], delimiter);
+  const firstHeaderMap = mapHeaderIndex(firstCells);
+  const hasHeader = firstHeaderMap.email !== undefined || headerKey(firstCells[0]) === 'name';
+  const headerMap = hasHeader
+    ? firstHeaderMap
+    : { name: 0, email: 1, department: 2, role: 3, employeeId: 4 };
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+
+  dataLines.forEach((line, index) => {
+    const cells = splitCsvLine(line, delimiter);
+    const cell = (key: string) => {
+      const cellIndex = headerMap[key];
+      return cellIndex === undefined ? '' : String(cells[cellIndex] || '').trim();
+    };
+    let email = cell('email');
+    if (!email && cells.length === 1 && cells[0].includes('@')) {
+      email = cells[0].trim();
+    }
+    const firstName = cell('firstName');
+    const lastName = cell('lastName');
+    const combinedName = [firstName, lastName].filter(Boolean).join(' ');
+    const name = cell('name') || combinedName;
+    if (!email) {
+      parseErrors.push(`Line ${index + 1}: email is required`);
+      return;
+    }
+    users.push({
+      email,
+      name,
+      department: cell('department'),
+      employeeId: cell('employeeId'),
+      role: (cell('role') || 'EMPLOYEE').toUpperCase() as User['role'],
+      active: true,
+    });
+  });
+
+  return { users, parseErrors };
+}
 
 export function Admin({ user }: AdminProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -48,6 +154,9 @@ export function Admin({ user }: AdminProps) {
   });
   const [userFormError, setUserFormError] = useState<string | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
+  const [bulkUsersText, setBulkUsersText] = useState('');
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
+  const [isSavingBulkUsers, setIsSavingBulkUsers] = useState(false);
   const [cabinForm, setCabinForm] = useState({
     cabinId: '',
     cabinName: '',
@@ -229,6 +338,61 @@ export function Admin({ user }: AdminProps) {
       setUserFormError(err instanceof Error ? err.message : 'Failed to add user');
     } finally {
       setIsSavingUser(false);
+    }
+  };
+
+  const handleBulkFile = async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      setBulkUsersText(text);
+      setBulkResult(null);
+      setUserFormError(null);
+    } catch {
+      setUserFormError('Could not read that file');
+    }
+  };
+
+  const handleBulkCreateUsers = async () => {
+    setUserFormError(null);
+    setBulkResult(null);
+    const parsed = parseBulkUsers(bulkUsersText);
+    if (parsed.parseErrors.length && !parsed.users.length) {
+      setUserFormError(parsed.parseErrors[0]);
+      return;
+    }
+    if (!parsed.users.length) {
+      setUserFormError('Paste a CSV or one user per line: name, email, department, role');
+      return;
+    }
+    setIsSavingBulkUsers(true);
+    try {
+      const result = await createUsers(parsed.users);
+      const parts = [`Added ${result.created.length}`];
+      if (result.skipped.length) {
+        parts.push(`skipped ${result.skipped.length} existing`);
+      }
+      const allErrors = [
+        ...parsed.parseErrors,
+        ...result.errors.map((item) => `${item.email || 'row'}: ${item.message}`),
+      ];
+      if (allErrors.length) {
+        parts.push(`${allErrors.length} failed`);
+      }
+      setBulkResult(parts.join(', '));
+      if (allErrors.length) {
+        setUserFormError(allErrors.slice(0, 8).join(' · '));
+      }
+      if (result.created.length) {
+        setBulkUsersText('');
+        loadData();
+      }
+    } catch (err: unknown) {
+      setUserFormError(err instanceof Error ? err.message : 'Failed to import users');
+    } finally {
+      setIsSavingBulkUsers(false);
     }
   };
 
@@ -539,6 +703,48 @@ export function Admin({ user }: AdminProps) {
                 {userFormError && (
                   <p className="mt-2 text-sm text-red-600">{userFormError}</p>
                 )}
+                <div className="mt-6">
+                  <h3 className="text-sm font-medium text-gray-900">Bulk add</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Paste CSV or upload a file. Columns: name, email, department, role.
+                    One email per line also works.
+                  </p>
+                  <textarea
+                    value={bulkUsersText}
+                    onChange={(e) => {
+                      setBulkUsersText(e.target.value);
+                      setBulkResult(null);
+                    }}
+                    rows={6}
+                    placeholder={'name,email,department,role\nJane Doe,jane@codeace.com,Engineering,EMPLOYEE'}
+                    className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                  />
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <label className="px-4 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer hover:bg-gray-50">
+                      Upload CSV
+                      <input
+                        type="file"
+                        accept=".csv,.txt,text/csv,text/plain"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          handleBulkFile(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    <button
+                      onClick={handleBulkCreateUsers}
+                      disabled={isSavingBulkUsers}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isSavingBulkUsers ? 'Importing...' : 'Import users'}
+                    </button>
+                    {bulkResult && (
+                      <p className="text-sm text-gray-600">{bulkResult}</p>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
