@@ -157,8 +157,6 @@ function AppContent() {
   );
 }
 
-}
-
 function App() {
   if (!GOOGLE_CLIENT_ID) {
     return (
