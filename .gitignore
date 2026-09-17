@@ -39,3 +39,14 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# Backend code (keep private - deploy manually to Google Apps Script)
+apps-script/
+
+# Documentation (optional - remove if you want to keep docs in repo)
+# API_DOCUMENTATION.md
+# DEPLOYMENT.md
+# TESTING.md
+# USER_GUIDE.md
+# PROJECT_SUMMARY.md
+# HANDOFF.md
