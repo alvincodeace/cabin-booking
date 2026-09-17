@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { User, UserRole, Booking, Cabin } from '../types';
+import type { User, UserRole, Booking, Cabin, AuditLog } from '../types';
 import {
   getTodayStats,
   getAllBookings,
@@ -16,6 +16,7 @@ import {
   createUser,
   createUsers,
   importSlackUsers,
+  getAuditLogs,
 } from '../api/appsScript';
 import { BookingList, downloadBookingsCsv } from '../components/BookingList';
 
@@ -23,11 +24,36 @@ interface AdminProps {
   user: User;
 }
 
-type Tab = 'overview' | 'bookings' | 'cabins' | 'users' | 'settings';
+type Tab = 'overview' | 'bookings' | 'cabins' | 'users' | 'activity' | 'settings';
 
 type BulkUser = Omit<User, 'createdAt'>;
 
 const USER_ROLES: UserRole[] = ['EMPLOYEE', 'TEAM_LEAD', 'ADMIN'];
+
+const AUDIT_ACTION_LABEL: Record<string, string> = {
+  BOOKING_CREATED: 'Booked cabin',
+  BOOKING_CANCELLED: 'Cancelled booking',
+  CABIN_CREATED: 'Added cabin',
+  CABIN_UPDATED: 'Updated cabin',
+  CABIN_DELETED: 'Deleted cabin',
+  USER_CREATED: 'Added user',
+  USERS_IMPORTED: 'Imported users',
+  USER_ACTIVATED: 'Activated user',
+  USER_DEACTIVATED: 'Deactivated user',
+  USER_ROLE_CHANGED: 'Changed role',
+  SETTINGS_UPDATED: 'Updated settings',
+};
+
+function formatAuditTime(value: string) {
+  return new Date(value).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 function detectDelimiter(line: string): string {
   const comma = (line.match(/,/g) || []).length;
@@ -174,6 +200,9 @@ export function Admin({ user }: AdminProps) {
   const [cabinFormError, setCabinFormError] = useState<string | null>(null);
   const [isSavingCabin, setIsSavingCabin] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditSetupRequired, setAuditSetupRequired] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -205,6 +234,10 @@ export function Admin({ user }: AdminProps) {
       } else if (activeTab === 'settings') {
         const settingsData = await getSettings();
         setSettingsState(settingsData);
+      } else if (activeTab === 'activity') {
+        const result = await getAuditLogs(auditSearch);
+        setAuditLogs(Array.isArray(result.logs) ? result.logs : []);
+        setAuditSetupRequired(Boolean(result.setupRequired));
       }
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -460,6 +493,7 @@ export function Admin({ user }: AdminProps) {
     { id: 'bookings', label: 'Bookings' },
     { id: 'cabins', label: 'Cabins' },
     { id: 'users', label: 'Users' },
+    { id: 'activity', label: 'Activity' },
     { id: 'settings', label: 'Settings' },
   ] as const;
 
@@ -888,6 +922,90 @@ export function Admin({ user }: AdminProps) {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'activity' && (
+            <div className="card overflow-hidden">
+              <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1">
+                  <h2 className="text-lg font-semibold text-gray-900">Activity</h2>
+                  <p className="text-sm text-stone-500 mt-0.5">
+                    Who did what, after it succeeded. Latest 200 events.
+                  </p>
+                </div>
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    loadData();
+                  }}
+                >
+                  <input
+                    value={auditSearch}
+                    onChange={(event) => setAuditSearch(event.target.value)}
+                    placeholder="Search name, email, or action"
+                    className="input w-64"
+                  />
+                  <button type="submit" className="btn-secondary">
+                    Search
+                  </button>
+                </form>
+              </div>
+              {auditSetupRequired ? (
+                <div className="p-6 text-sm text-stone-600">
+                  <p>
+                    Activity logging is not set up yet. In Supabase, open SQL Editor and run{' '}
+                    <code className="text-xs">supabase/audit_logs.sql</code>.
+                  </p>
+                </div>
+              ) : auditLogs.length === 0 ? (
+                <div className="py-16 text-center text-sm text-stone-500">
+                  No activity yet. Book, cancel, or change a user to see a row here.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          When
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Who
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Action
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Details
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {auditLogs.map((log) => (
+                        <tr key={log.id}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatAuditTime(log.createdAt)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <div>{log.actorName || log.actorEmail}</div>
+                            <div className="text-xs text-gray-500">{log.actorEmail}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="px-2 py-1 text-xs font-medium bg-stone-100 text-stone-700 rounded">
+                              {AUDIT_ACTION_LABEL[log.action] || log.action}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {log.summary}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

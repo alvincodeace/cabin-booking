@@ -9,6 +9,7 @@ import type {
   ConfirmBookingRequest,
   Settings,
   AppNotification,
+  AuditLog,
 } from '../types';
 
 const API_URL = '/api';
@@ -236,4 +237,11 @@ export async function getTodayStats(): Promise<{
   activeLocks: number;
 }> {
   return apiCall('todayStats');
+}
+
+export async function getAuditLogs(search?: string): Promise<{
+  logs: AuditLog[];
+  setupRequired: boolean;
+}> {
+  return apiCall('auditLogs', { search });
 }

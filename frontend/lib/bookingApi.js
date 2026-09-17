@@ -164,6 +164,19 @@ function mapNotification(row) {
   };
 }
 
+function mapAuditLog(row) {
+  return {
+    id: row.id,
+    createdAt: toIso(row.created_at),
+    actorEmail: row.actor_email || '',
+    actorName: row.actor_name || '',
+    action: row.action,
+    entityType: row.entity_type || '',
+    entityId: row.entity_id || '',
+    summary: row.summary || '',
+  };
+}
+
 async function getAttendeesByBookingIds(supabase, bookingIds) {
   if (!bookingIds.length) {
     return {};
@@ -220,6 +233,24 @@ function isMissingRelation(error) {
     message.includes('could not find the table') ||
     message.includes('schema cache')
   );
+}
+
+async function writeAuditLog(supabase, entry) {
+  try {
+    const { error } = await supabase.from('audit_logs').insert({
+      actor_email: entry.actorEmail || '',
+      actor_name: entry.actorName || '',
+      action: entry.action,
+      entity_type: entry.entityType || '',
+      entity_id: String(entry.entityId || ''),
+      summary: entry.summary || '',
+    });
+    if (error && !isMissingRelation(error)) {
+      console.error('Audit log failed:', errorMessage(error));
+    }
+  } catch (error) {
+    console.error('Audit log failed:', error);
+  }
 }
 
 async function createNotifications(supabase, rows) {
@@ -637,7 +668,19 @@ export async function processSlackEvent(headers, rawBody) {
       if (member?.id && !member?.profile?.email) {
         member = (await fetchSlackUser(member.id)) || member;
       }
-      await importSlackMembers(getSupabase(), [member]);
+      const supabase = getSupabase();
+      const imported = await importSlackMembers(supabase, [member]);
+      if (imported.created?.length) {
+        const createdUser = imported.created[0];
+        await writeAuditLog(supabase, {
+          actorEmail: 'slack',
+          actorName: 'Slack',
+          action: 'USER_CREATED',
+          entityType: 'user',
+          entityId: createdUser.email,
+          summary: `Slack added ${createdUser.name} (${createdUser.email}) when they joined the workspace`,
+        });
+      }
     } catch (error) {
       console.error('Slack team_join import failed:', error);
     }
@@ -1143,6 +1186,14 @@ export async function handleBookingApi(req, res) {
 
         booking.location = await getCabinLocation(supabase, booking.cabinId);
         await notifySlack(booking, booking.attendees || [], 'booked');
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'BOOKING_CREATED',
+          entityType: 'booking',
+          entityId: booking.bookingId,
+          summary: `${user.name} booked ${booking.cabinName} on ${booking.date} ${booking.startTime}–${booking.endTime}${booking.purpose ? ` (${booking.purpose})` : ''}`,
+        });
         return ok(res, booking);
       }
 
@@ -1220,6 +1271,14 @@ export async function handleBookingApi(req, res) {
           name: row.name,
         }));
         await notifySlack(cancelledBooking, slackAttendees, 'cancelled', [user.email]);
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'BOOKING_CANCELLED',
+          entityType: 'booking',
+          entityId: booking.booking_id,
+          summary: `${user.name} cancelled ${booking.cabin_name} on ${formatDateValue(booking.date)} ${booking.start_time}–${booking.end_time} (booked by ${booking.booked_by})`,
+        });
         return ok(res, null);
       }
 
@@ -1257,6 +1316,14 @@ export async function handleBookingApi(req, res) {
           .select()
           .single();
         if (error) throw error;
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'CABIN_CREATED',
+          entityType: 'cabin',
+          entityId: cabinId,
+          summary: `${user.name} added cabin ${cabinName}`,
+        });
         return ok(res, mapCabin(data));
       }
 
@@ -1285,6 +1352,14 @@ export async function handleBookingApi(req, res) {
         if (!data) {
           return fail(res, 'CABIN_NOT_FOUND', 'Cabin not found');
         }
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'CABIN_UPDATED',
+          entityType: 'cabin',
+          entityId: cabinId,
+          summary: `${user.name} updated cabin ${cabinName} (${payload.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE'})`,
+        });
         return ok(res, mapCabin(data));
       }
 
@@ -1324,8 +1399,21 @@ export async function handleBookingApi(req, res) {
           await supabase.from('bookings').delete().eq('cabin_id', cabinId);
         }
         await supabase.from('locks').delete().eq('cabin_id', cabinId);
+        const { data: cabinRow } = await supabase
+          .from('cabins')
+          .select('cabin_name')
+          .eq('cabin_id', cabinId)
+          .maybeSingle();
         const { error } = await supabase.from('cabins').delete().eq('cabin_id', cabinId);
         if (error) throw error;
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'CABIN_DELETED',
+          entityType: 'cabin',
+          entityId: cabinId,
+          summary: `${user.name} deleted cabin ${cabinRow?.cabin_name || cabinId}`,
+        });
         return ok(res, null);
       }
 
@@ -1348,6 +1436,14 @@ export async function handleBookingApi(req, res) {
           }
           throw error;
         }
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'USER_CREATED',
+          entityType: 'user',
+          entityId: data.email,
+          summary: `${user.name} added ${data.name} (${data.email}) as ${data.role}`,
+        });
         return ok(res, mapUser(data));
       }
 
@@ -1382,6 +1478,14 @@ export async function handleBookingApi(req, res) {
         }
 
         const inserted = await insertNewUsers(supabase, prepared);
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'USERS_IMPORTED',
+          entityType: 'user',
+          entityId: '',
+          summary: `${user.name} bulk-added ${inserted.created.length} users (${inserted.skipped.length} skipped)`,
+        });
         return ok(res, { created: inserted.created, skipped: inserted.skipped, errors });
       }
 
@@ -1391,6 +1495,14 @@ export async function handleBookingApi(req, res) {
         }
         const members = await fetchSlackMembers();
         const result = await importSlackMembers(supabase, members);
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'USERS_IMPORTED',
+          entityType: 'user',
+          entityId: '',
+          summary: `${user.name} imported ${result.created.length} users from Slack (${result.skipped.length} already in the app)`,
+        });
         return ok(res, result);
       }
 
@@ -1398,8 +1510,22 @@ export async function handleBookingApi(req, res) {
         if (!requireAdmin(user)) {
           return fail(res, 'UNAUTHORIZED', 'Admin access required');
         }
+        const targetEmail = String(payload.email || '').trim().toLowerCase();
+        const { data: statusUser } = await supabase
+          .from('users')
+          .select('email, name, active')
+          .eq('email', targetEmail)
+          .maybeSingle();
         const { error } = await supabase.from('users').update({ active: payload.active }).eq('email', payload.email);
         if (error) throw error;
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: payload.active ? 'USER_ACTIVATED' : 'USER_DEACTIVATED',
+          entityType: 'user',
+          entityId: targetEmail,
+          summary: `${user.name} ${payload.active ? 'activated' : 'deactivated'} ${statusUser?.name || targetEmail}`,
+        });
         return ok(res, null);
       }
 
@@ -1450,6 +1576,14 @@ export async function handleBookingApi(req, res) {
           .select()
           .single();
         if (error) throw error;
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'USER_ROLE_CHANGED',
+          entityType: 'user',
+          entityId: email,
+          summary: `${user.name} changed ${data.name} (${email}) from ${existing.role} to ${role}`,
+        });
         return ok(res, mapUser(data));
       }
 
@@ -1466,7 +1600,42 @@ export async function handleBookingApi(req, res) {
           })
           .eq('id', 1);
         if (error) throw error;
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'SETTINGS_UPDATED',
+          entityType: 'settings',
+          entityId: '1',
+          summary: `${user.name} updated settings (lock ${payload.lockDurationMinutes} min, max ${payload.maxBookingDurationMinutes} min, advance ${payload.advanceBookingDays} days)`,
+        });
         return ok(res, await getSettings(supabase));
+      }
+
+      case 'auditLogs': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const search = String(payload.search || '')
+          .trim()
+          .replace(/[%*,()]/g, ' ')
+          .slice(0, 80);
+        let query = supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(200);
+        if (search) {
+          const term = `%${search}%`;
+          query = query.or(
+            `actor_email.ilike.${term},actor_name.ilike.${term},summary.ilike.${term},action.ilike.${term},entity_id.ilike.${term}`
+          );
+        }
+        const { data, error } = await query;
+        if (error && isMissingRelation(error)) {
+          return ok(res, { logs: [], setupRequired: true });
+        }
+        if (error) throw error;
+        return ok(res, { logs: (data || []).map(mapAuditLog), setupRequired: false });
       }
 
       default:

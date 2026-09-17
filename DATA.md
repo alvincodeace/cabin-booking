@@ -141,6 +141,23 @@ No booking history is stored only in the browser; it lives in the database.
 | Role | Access |
 | --- | --- |
 | Employee / Team lead | Own bookings, cabins, people they add to a meeting |
-| Admin | All users, cabins, all bookings (including cancelled), export, settings |
+| Admin | All users, cabins, all bookings (including cancelled), export, settings, activity log |
+
+---
+
+## Activity log (admin)
+
+Successful actions are stored so admins can see who did what:
+
+| Field | Notes |
+| --- | --- |
+| When | Timestamp (Asia/Kolkata in the Admin screen) |
+| Who | Name and email of the person (or Slack for auto-add) |
+| Action | Book, cancel, cabin/user/settings change |
+| Details | Cabin, time, target user, or what changed |
+
+View it in **Admin → Activity**. Only admins can read this list. Failed attempts are not stored.
+
+---
 
 Server access to the database uses a Supabase service key on Vercel. The browser never receives that key.

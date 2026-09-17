@@ -121,3 +121,14 @@ export interface BookingRequest {
   endTime: string;
   purpose: string;
 }
+
+export interface AuditLog {
+  id: string;
+  createdAt: string;
+  actorEmail: string;
+  actorName: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  summary: string;
+}

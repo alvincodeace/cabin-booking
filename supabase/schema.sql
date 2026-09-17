@@ -75,12 +75,26 @@ create table if not exists notifications (
   created_at timestamptz not null default now()
 );
 
+create table if not exists audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  actor_email text not null default '',
+  actor_name text not null default '',
+  action text not null,
+  entity_type text not null default '',
+  entity_id text not null default '',
+  summary text not null default ''
+);
+
 create index if not exists bookings_cabin_date_idx on bookings (cabin_id, date);
 create index if not exists bookings_user_idx on bookings (booked_by_email);
 create index if not exists locks_cabin_date_idx on locks (cabin_id, date);
 create index if not exists locks_expires_idx on locks (expires_at);
 create index if not exists notifications_user_idx on notifications (user_email, created_at desc);
 create index if not exists booking_attendees_user_idx on booking_attendees (user_email);
+create index if not exists audit_logs_created_idx on audit_logs (created_at desc);
+create index if not exists audit_logs_actor_idx on audit_logs (actor_email);
+create index if not exists audit_logs_action_idx on audit_logs (action);
 
 alter table users enable row level security;
 alter table cabins enable row level security;
@@ -89,6 +103,7 @@ alter table locks enable row level security;
 alter table settings enable row level security;
 alter table booking_attendees enable row level security;
 alter table notifications enable row level security;
+alter table audit_logs enable row level security;
 
 insert into settings (id, lock_duration_minutes, max_booking_duration_minutes, advance_booking_days)
 values (1, 5, 60, 30)
