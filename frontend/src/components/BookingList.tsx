@@ -7,6 +7,61 @@ interface BookingListProps {
   showActions?: boolean;
 }
 
+function csvCell(value: unknown) {
+  const text = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+export function downloadBookingsCsv(bookings: Booking[], filenamePrefix = 'cabin-bookings') {
+  const header = [
+    'Booking ID',
+    'Cabin',
+    'Date',
+    'Start',
+    'End',
+    'Booked by',
+    'Email',
+    'Department',
+    'Purpose',
+    'Members',
+    'Status',
+    'Created at',
+    'Updated at',
+  ];
+  const lines = [
+    header.join(','),
+    ...bookings.map((booking) =>
+      [
+        booking.bookingId,
+        booking.cabinName,
+        booking.date,
+        booking.startTime,
+        booking.endTime,
+        booking.bookedBy,
+        booking.bookedByEmail,
+        booking.department,
+        booking.purpose,
+        (booking.attendees || []).map((attendee) => attendee.name).join('; '),
+        booking.status,
+        booking.createdAt,
+        booking.updatedAt,
+      ]
+        .map(csvCell)
+        .join(',')
+    ),
+  ];
+  const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatDate(dateStr: string) {
   const [year, month, day] = String(dateStr).split('-').map(Number);
   if (!year || !month || !day) return dateStr;

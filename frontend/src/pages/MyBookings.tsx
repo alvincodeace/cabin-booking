@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { User, Booking } from '../types';
 import { getMyBookings, cancelBooking } from '../api/appsScript';
-import { BookingList } from '../components/BookingList';
+import { BookingList, downloadBookingsCsv } from '../components/BookingList';
 
 interface MyBookingsProps {
   user: User;
@@ -63,11 +63,21 @@ export function MyBookings({ user }: MyBookingsProps) {
 
   return (
     <div className="page-wrap">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-stone-900">My bookings</h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Meetings you booked and ones you were added to
-        </p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-stone-900">My bookings</h1>
+          <p className="mt-1 text-sm text-stone-500">
+            Meetings you booked and ones you were added to
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => downloadBookingsCsv(bookings, 'my-bookings')}
+          disabled={bookings.length === 0}
+          className="btn-secondary text-sm"
+        >
+          Export CSV
+        </button>
       </div>
 
       {error && (

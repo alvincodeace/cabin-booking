@@ -16,7 +16,7 @@ import {
   createUsers,
   importSlackUsers,
 } from '../api/appsScript';
-import { BookingList } from '../components/BookingList';
+import { BookingList, downloadBookingsCsv } from '../components/BookingList';
 
 interface AdminProps {
   user: User;
@@ -507,10 +507,19 @@ export function Admin({ user }: AdminProps) {
           {/* Bookings Tab */}
           {activeTab === 'bookings' && (
             <div className="card overflow-hidden">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  All Bookings
-                </h2>
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">All bookings</h2>
+                  <p className="text-sm text-stone-500 mt-0.5">Includes booked and cancelled</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => downloadBookingsCsv(bookings, 'all-bookings')}
+                  disabled={bookings.length === 0}
+                  className="btn-secondary text-sm"
+                >
+                  Export CSV
+                </button>
               </div>
               <BookingList
                 bookings={bookings}
