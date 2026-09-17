@@ -14,24 +14,19 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <div className="spinner" />
       </div>
     );
   }
 
   if (!user.active) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Account Inactive
-          </h2>
-          <p className="text-gray-600">
-            Your account is currently inactive. Please contact your administrator.
+      <div className="page-wrap">
+        <div className="card max-w-md mx-auto p-8 text-center">
+          <h2 className="text-xl font-semibold text-stone-900">Account inactive</h2>
+          <p className="mt-2 text-sm text-stone-500">
+            Ask an admin to reactivate your account.
           </p>
         </div>
       </div>

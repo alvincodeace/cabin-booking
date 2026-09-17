@@ -435,40 +435,34 @@ export function Admin({ user }: AdminProps) {
   ] as const;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="page-wrap">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Manage cabins, bookings, and users
+        <h1 className="text-2xl font-semibold tracking-tight text-stone-900">Admin</h1>
+        <p className="mt-1 text-sm text-stone-500">
+          Cabins, bookings, and people
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+      <div className="flex flex-wrap gap-1 mb-6 p-1 card w-fit">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'bg-stone-900 text-white'
+                : 'text-stone-600 hover:bg-stone-100'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {loadError && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="mb-4 card p-4">
           <p className="text-red-700">{loadError}</p>
-          <button
-            onClick={loadData}
-            className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-          >
+          <button onClick={loadData} className="mt-2 text-sm text-teal-800 font-medium">
             Try again
           </button>
         </div>
@@ -476,42 +470,34 @@ export function Admin({ user }: AdminProps) {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="spinner" />
         </div>
       ) : (
         <>
           {/* Overview Tab */}
           {activeTab === 'overview' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h3 className="text-sm font-medium text-gray-500">
-                  Total Cabins
-                </h3>
-                <p className="mt-2 text-3xl font-bold text-gray-900">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="card p-5">
+                <h3 className="text-sm text-stone-500">Total cabins</h3>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-stone-900">
                   {stats.totalCabins}
                 </p>
               </div>
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h3 className="text-sm font-medium text-gray-500">
-                  Available Today
-                </h3>
-                <p className="mt-2 text-3xl font-bold text-green-600">
+              <div className="card p-5">
+                <h3 className="text-sm text-stone-500">Available today</h3>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-emerald-700">
                   {stats.availableToday}
                 </p>
               </div>
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h3 className="text-sm font-medium text-gray-500">
-                  Today's Bookings
-                </h3>
-                <p className="mt-2 text-3xl font-bold text-blue-600">
+              <div className="card p-5">
+                <h3 className="text-sm text-stone-500">Today’s bookings</h3>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-teal-800">
                   {stats.todayBookings}
                 </p>
               </div>
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h3 className="text-sm font-medium text-gray-500">
-                  Active Locks
-                </h3>
-                <p className="mt-2 text-3xl font-bold text-yellow-600">
+              <div className="card p-5">
+                <h3 className="text-sm text-stone-500">Active holds</h3>
+                <p className="mt-2 text-3xl font-semibold tracking-tight text-amber-700">
                   {stats.activeLocks}
                 </p>
               </div>
@@ -520,7 +506,7 @@ export function Admin({ user }: AdminProps) {
 
           {/* Bookings Tab */}
           {activeTab === 'bookings' && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="card overflow-hidden">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">
                   All Bookings
@@ -537,7 +523,7 @@ export function Admin({ user }: AdminProps) {
 
           {/* Cabins Tab */}
           {activeTab === 'cabins' && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="card overflow-hidden">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">
                   {cabinForm.cabinId ? 'Edit cabin' : 'Add cabin'}
@@ -547,13 +533,13 @@ export function Admin({ user }: AdminProps) {
                     value={cabinForm.cabinName}
                     onChange={(e) => setCabinForm({ ...cabinForm, cabinName: e.target.value })}
                     placeholder="Name"
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <input
                     value={cabinForm.location}
                     onChange={(e) => setCabinForm({ ...cabinForm, location: e.target.value })}
                     placeholder="Location"
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <input
                     type="number"
@@ -563,20 +549,20 @@ export function Admin({ user }: AdminProps) {
                       setCabinForm({ ...cabinForm, capacity: Number(e.target.value) || 1 })
                     }
                     placeholder="Capacity"
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <input
                     value={cabinForm.description}
                     onChange={(e) => setCabinForm({ ...cabinForm, description: e.target.value })}
                     placeholder="Description"
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <select
                     value={cabinForm.status}
                     onChange={(e) =>
                       setCabinForm({ ...cabinForm, status: e.target.value as Cabin['status'] })
                     }
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   >
                     <option value="ACTIVE">ACTIVE</option>
                     <option value="INACTIVE">INACTIVE</option>
@@ -585,14 +571,14 @@ export function Admin({ user }: AdminProps) {
                     <button
                       onClick={handleSaveCabin}
                       disabled={isSavingCabin}
-                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      className="btn-primary flex-1"
                     >
                       {isSavingCabin ? 'Saving...' : cabinForm.cabinId ? 'Update' : 'Add'}
                     </button>
                     {cabinForm.cabinId && (
                       <button
                         onClick={resetCabinForm}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                        className="btn-secondary"
                       >
                         Cancel
                       </button>
@@ -677,7 +663,7 @@ export function Admin({ user }: AdminProps) {
 
           {/* Users Tab */}
           {activeTab === 'users' && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="card overflow-hidden">
               <div className="p-4 border-b border-gray-200">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -689,7 +675,7 @@ export function Admin({ user }: AdminProps) {
                   <button
                     onClick={handleImportFromSlack}
                     disabled={isImportingSlack}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                    className="btn-secondary text-sm"
                   >
                     {isImportingSlack ? 'Importing from Slack...' : 'Import from Slack'}
                   </button>
@@ -699,26 +685,26 @@ export function Admin({ user }: AdminProps) {
                     value={newUser.name}
                     onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
                     placeholder="Name"
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <input
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                     placeholder="nina.v@example.com"
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <input
                     value={newUser.department}
                     onChange={(e) => setNewUser({ ...newUser, department: e.target.value })}
                     placeholder="Department"
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <select
                     value={newUser.role}
                     onChange={(e) =>
                       setNewUser({ ...newUser, role: e.target.value as User['role'] })
                     }
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   >
                     <option value="EMPLOYEE">EMPLOYEE</option>
                     <option value="TEAM_LEAD">TEAM_LEAD</option>
@@ -727,7 +713,7 @@ export function Admin({ user }: AdminProps) {
                   <button
                     onClick={handleCreateUser}
                     disabled={isSavingUser}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    className="btn-primary"
                   >
                     {isSavingUser ? 'Adding...' : 'Add user'}
                   </button>
@@ -749,10 +735,10 @@ export function Admin({ user }: AdminProps) {
                     }}
                     rows={6}
                     placeholder={'name,email,department,role\nJane Doe,jane@codeace.com,Engineering,EMPLOYEE'}
-                    className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                    className="input mt-3 font-mono"
                   />
                   <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <label className="px-4 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer hover:bg-gray-50">
+                    <label className="btn-secondary text-sm cursor-pointer">
                       Upload CSV
                       <input
                         type="file"
@@ -768,7 +754,7 @@ export function Admin({ user }: AdminProps) {
                     <button
                       onClick={handleBulkCreateUsers}
                       disabled={isSavingBulkUsers}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      className="btn-primary"
                     >
                       {isSavingBulkUsers ? 'Importing...' : 'Import users'}
                     </button>
@@ -852,9 +838,9 @@ export function Admin({ user }: AdminProps) {
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">
-                System Settings
+            <div className="card p-6">
+              <h2 className="text-lg font-semibold text-stone-900 mb-6">
+                Settings
               </h2>
               <div className="space-y-6 max-w-md">
                 <div>
@@ -870,7 +856,7 @@ export function Admin({ user }: AdminProps) {
                         lockDurationMinutes: parseInt(e.target.value),
                       })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     How long a cabin is reserved during booking process
@@ -890,7 +876,7 @@ export function Admin({ user }: AdminProps) {
                         maxBookingDurationMinutes: parseInt(e.target.value),
                       })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Maximum duration for a single booking
@@ -910,7 +896,7 @@ export function Admin({ user }: AdminProps) {
                         advanceBookingDays: parseInt(e.target.value),
                       })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="input"
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     How many days in advance bookings can be made
@@ -919,7 +905,7 @@ export function Admin({ user }: AdminProps) {
 
                 <button
                   onClick={handleSaveSettings}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="btn-primary"
                 >
                   Save Settings
                 </button>

@@ -8,121 +8,79 @@ interface CabinCardProps {
 }
 
 export function CabinCard({ cabin, slots, user: _user, onSlotClick }: CabinCardProps) {
-  // All authenticated users can book (user parameter kept for interface compatibility)
-  const canBook = true;
-
   const getSlotClassName = (slot: TimeSlot) => {
-    const baseClasses = 'px-3 py-2 rounded-lg text-sm font-medium transition-colors';
-
+    const base = 'h-10 rounded-xl text-sm font-medium transition-colors';
     if (cabin.status === 'INACTIVE') {
-      return `${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`;
+      return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
     }
-
     switch (slot.status) {
       case 'AVAILABLE':
-        return canBook
-          ? `${baseClasses} bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer`
-          : `${baseClasses} bg-green-50 text-green-700`;
+        return `${base} bg-emerald-50 text-emerald-800 hover:bg-emerald-100 cursor-pointer`;
       case 'BOOKED':
-        return `${baseClasses} bg-red-50 text-red-700`;
+        return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
       case 'LOCKED':
-        if (slot.isOwnLock) {
-          return `${baseClasses} bg-yellow-50 text-yellow-700 border-2 border-yellow-400`;
-        }
-        return `${baseClasses} bg-orange-50 text-orange-700`;
-      case 'DISABLED':
-        return `${baseClasses} bg-gray-100 text-gray-400`;
+        return slot.isOwnLock
+          ? `${base} bg-amber-100 text-amber-800 ring-1 ring-amber-300`
+          : `${base} bg-amber-50 text-amber-700 cursor-not-allowed`;
       default:
-        return baseClasses;
+        return `${base} bg-stone-100 text-stone-400`;
     }
   };
 
-  const getSlotLabel = (slot: TimeSlot) => {
-    if (cabin.status === 'INACTIVE') {
-      return `${slot.time} - DISABLED`;
+  const slotTitle = (slot: TimeSlot) => {
+    if (slot.status === 'BOOKED' && slot.booking) {
+      return `${slot.time} · booked by ${slot.booking.bookedBy}`;
     }
-
-    switch (slot.status) {
-      case 'AVAILABLE':
-        return `${slot.time} - AVAILABLE`;
-      case 'BOOKED':
-        if (slot.booking) {
-          return `${slot.time} - BOOKED - ${slot.booking.bookedBy}`;
-        }
-        return `${slot.time} - BOOKED`;
-      case 'LOCKED':
-        if (slot.isOwnLock) {
-          return `${slot.time} - LOCKED BY YOU`;
-        }
-        return `${slot.time} - TEMPORARILY LOCKED`;
-      case 'DISABLED':
-        return `${slot.time} - DISABLED`;
-      default:
-        return slot.time;
+    if (slot.status === 'LOCKED') {
+      return slot.isOwnLock ? `${slot.time} · held by you` : `${slot.time} · held by someone else`;
     }
+    return slot.status === 'AVAILABLE' ? `${slot.time} · available` : slot.time;
   };
 
   const handleSlotClick = (slot: TimeSlot) => {
-    if (cabin.status === 'INACTIVE') return;
-    if (!canBook) return;
-    if (slot.status !== 'AVAILABLE') return;
-
+    if (cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE') return;
     onSlotClick(cabin, slot);
   };
 
+  const availableCount = slots.filter((slot) => slot.status === 'AVAILABLE' && cabin.status === 'ACTIVE').length;
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-      <div className="mb-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              {cabin.cabinName}
-            </h3>
-            <p className="text-sm text-gray-600">{cabin.location}</p>
-            <p className="text-sm text-gray-500">Capacity: {cabin.capacity}</p>
-          </div>
-          {cabin.status === 'INACTIVE' && (
-            <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">
-              DISABLED
-            </span>
-          )}
+    <div className="card p-5">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="text-base font-semibold text-stone-900">{cabin.cabinName}</h3>
+          <p className="mt-1 text-sm text-stone-500">
+            {cabin.location}
+            {cabin.capacity ? ` · ${cabin.capacity} people` : ''}
+          </p>
         </div>
-        {cabin.description && (
-          <p className="mt-2 text-sm text-gray-600">{cabin.description}</p>
+        {cabin.status === 'INACTIVE' ? (
+          <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500 bg-stone-100 px-2 py-1 rounded-full">
+            Offline
+          </span>
+        ) : (
+          <span className="text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2 py-1 rounded-full">
+            {availableCount} open
+          </span>
         )}
       </div>
-
-      <div className="space-y-2">
+      {cabin.description && (
+        <p className="mb-4 text-sm text-stone-500 leading-relaxed">{cabin.description}</p>
+      )}
+      <div className="grid grid-cols-4 gap-1.5">
         {slots.map((slot, index) => (
           <button
-            key={index}
+            key={`${slot.time}-${index}`}
+            type="button"
+            title={slotTitle(slot)}
             onClick={() => handleSlotClick(slot)}
             className={getSlotClassName(slot)}
-            disabled={
-              cabin.status === 'INACTIVE' ||
-              !canBook ||
-              slot.status !== 'AVAILABLE'
-            }
+            disabled={cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE'}
           >
-            <div className="flex items-center justify-between">
-              <span>{getSlotLabel(slot)}</span>
-              {slot.status === 'LOCKED' && !slot.isOwnLock && slot.lock && (
-                <span className="text-xs">
-                  {new Date(slot.lock.expiresAt) > new Date()
-                    ? `Expires in ${Math.ceil(
-                        (new Date(slot.lock.expiresAt).getTime() -
-                          Date.now()) /
-                          60000
-                      )}m`
-                    : 'Expired'}
-                </span>
-              )}
-            </div>
+            {slot.time}
           </button>
         ))}
       </div>
-
-      {/* All users can book - message removed */}
     </div>
   );
 }

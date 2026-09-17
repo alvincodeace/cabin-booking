@@ -54,35 +54,32 @@ export function MyBookings({ user }: MyBookingsProps) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading bookings...</p>
+          <div className="spinner mx-auto" />
+          <p className="mt-4 text-sm text-stone-500">Loading bookings…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="page-wrap">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">My Bookings</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Bookings you created and meetings you were added to
+        <h1 className="text-2xl font-semibold tracking-tight text-stone-900">My bookings</h1>
+        <p className="mt-1 text-sm text-stone-500">
+          Meetings you booked and ones you were added to
         </p>
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="mb-4 card p-4">
           <p className="text-red-700">{error}</p>
-          <button
-            onClick={loadBookings}
-            className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-          >
+          <button onClick={loadBookings} className="mt-2 text-sm text-teal-800 font-medium">
             Try again
           </button>
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="card overflow-hidden">
         <BookingList
           bookings={bookings}
           user={user}

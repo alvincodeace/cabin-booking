@@ -7,169 +7,79 @@ interface BookingListProps {
   showActions?: boolean;
 }
 
+function formatDate(dateStr: string) {
+  const [year, month, day] = String(dateStr).split('-').map(Number);
+  if (!year || !month || !day) return dateStr;
+  return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export function BookingList({
   bookings,
   user,
   onCancel,
   showActions = true,
 }: BookingListProps) {
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  };
-
   const canCancelBooking = (booking: Booking) => {
     if (booking.status !== 'BOOKED') return false;
-    
-    const bookingDateTime = new Date(`${booking.date}T${booking.startTime}`);
-    const now = new Date();
-    
-    if (bookingDateTime < now) return false;
-    
+    const bookingDateTime = new Date(`${booking.date}T${booking.startTime}:00+05:30`);
+    if (bookingDateTime < new Date()) return false;
     if (user.role === 'ADMIN') return true;
     if (booking.bookedByEmail === user.email) return true;
-    
     return false;
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'BOOKED':
-        return (
-          <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">
-            Booked
-          </span>
-        );
-      case 'CANCELLED':
-        return (
-          <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">
-            Cancelled
-          </span>
-        );
-      case 'COMPLETED':
-        return (
-          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
-            Completed
-          </span>
-        );
-      default:
-        return null;
-    }
+  const statusClass = (status: string) => {
+    if (status === 'BOOKED') return 'bg-emerald-50 text-emerald-800';
+    if (status === 'CANCELLED') return 'bg-red-50 text-red-700';
+    return 'bg-stone-100 text-stone-600';
   };
 
   if (bookings.length === 0) {
     return (
-      <div className="text-center py-12">
-        <svg
-          className="mx-auto h-12 w-12 text-gray-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-          />
-        </svg>
-        <p className="mt-2 text-sm text-gray-600">No bookings found</p>
+      <div className="py-16 text-center">
+        <p className="text-sm text-stone-500">No bookings yet</p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Cabin
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Date
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Time
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Booked By
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Purpose
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Members
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Status
-            </th>
-            {showActions && (
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
+    <div className="divide-y divide-stone-100">
+      {bookings.map((booking) => (
+        <div key={booking.bookingId} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium text-stone-900">{booking.cabinName}</p>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${statusClass(booking.status)}`}>
+                {booking.status === 'BOOKED' ? 'Booked' : booking.status === 'CANCELLED' ? 'Cancelled' : booking.status}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-stone-500">
+              {formatDate(booking.date)} · {booking.startTime}–{booking.endTime}
+              {booking.bookedBy ? ` · ${booking.bookedBy}` : ''}
+            </p>
+            {booking.purpose && (
+              <p className="mt-1 text-sm text-stone-600 truncate">{booking.purpose}</p>
             )}
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {bookings.map((booking) => (
-            <tr key={booking.bookingId} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm font-medium text-gray-900">
-                  {booking.cabinName}
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-900">
-                  {formatDate(booking.date)}
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-900">
-                  {booking.startTime} - {booking.endTime}
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-900">{booking.bookedBy}</div>
-                <div className="text-sm text-gray-500">
-                  {booking.department}
-                </div>
-              </td>
-              <td className="px-6 py-4">
-                <div className="text-sm text-gray-900 max-w-xs truncate">
-                  {booking.purpose}
-                </div>
-              </td>
-              <td className="px-6 py-4">
-                <div className="text-sm text-gray-900 max-w-xs">
-                  {booking.attendees && booking.attendees.length > 0
-                    ? booking.attendees.map((attendee) => attendee.name).join(', ')
-                    : '—'}
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                {getStatusBadge(booking.status)}
-              </td>
-              {showActions && (
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  {canCancelBooking(booking) && onCancel && (
-                    <button
-                      onClick={() => onCancel(booking.bookingId)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            {booking.attendees && booking.attendees.length > 0 && (
+              <p className="mt-1 text-xs text-stone-400">
+                With {booking.attendees.map((attendee) => attendee.name).join(', ')}
+              </p>
+            )}
+          </div>
+          {showActions && canCancelBooking(booking) && onCancel && (
+            <button
+              onClick={() => onCancel(booking.bookingId)}
+              className="text-sm text-red-700 hover:text-red-900 font-medium self-start sm:self-center"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

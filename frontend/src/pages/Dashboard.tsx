@@ -120,112 +120,78 @@ export function Dashboard({ user }: DashboardProps) {
   const isToday = selectedDate === todayInKolkata();
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center justify-between">
+    <div className="page-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+        <div>
+          <p className="text-sm text-stone-500">Book a cabin</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-stone-900">
+            {isToday ? 'Today' : formatDisplayDate(selectedDate)}
+          </h1>
+        </div>
+        <div className="card flex items-center gap-2 px-2 py-2">
           <button
             onClick={() => handleDateChange(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-40 disabled:hover:bg-transparent"
+            className="btn-ghost h-10 w-10"
             disabled={selectedDate <= todayInKolkata()}
             aria-label="Previous day"
           >
-            <svg
-              className="w-6 h-6 text-gray-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
+            ‹
           </button>
-
-          <div className="text-center">
-            <h2 className="text-2xl font-semibold text-gray-900">
-              {formatDisplayDate(selectedDate)}
-            </h2>
-            {isToday && (
-              <p className="text-sm text-blue-600 font-medium">Today</p>
-            )}
-            <label className="mt-3 inline-flex items-center gap-2 text-sm text-gray-600">
-              <span className="sr-only">Choose date</span>
-              <input
-                type="date"
-                value={selectedDate}
-                min={todayInKolkata()}
-                max={maxDate}
-                onChange={(event) => handleCalendarChange(event.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
-              />
-            </label>
-          </div>
-
+          <input
+            type="date"
+            value={selectedDate}
+            min={todayInKolkata()}
+            max={maxDate}
+            onChange={(event) => handleCalendarChange(event.target.value)}
+            className="input w-auto min-w-[11rem] py-2"
+          />
           <button
             onClick={() => handleDateChange(1)}
-            className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-40 disabled:hover:bg-transparent"
+            className="btn-ghost h-10 w-10"
             disabled={selectedDate >= maxDate}
             aria-label="Next day"
           >
-            <svg
-              className="w-6 h-6 text-gray-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
+            ›
           </button>
-        </div>
-
-        <div className="mt-4 flex items-center justify-center gap-2">
-          <button
-            onClick={() => setSelectedDate(todayInKolkata())}
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
+          <button onClick={() => setSelectedDate(todayInKolkata())} className="btn-ghost">
             Today
-          </button>
-          <span className="text-gray-300">|</span>
-          <button
-            onClick={() => loadAvailability()}
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
-            Refresh
           </button>
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-4 text-xs text-stone-500 mb-4">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Available
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-stone-300" /> Booked
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-400" /> Held
+        </span>
+        <button onClick={() => loadAvailability()} className="ml-auto btn-ghost text-xs">
+          Refresh
+        </button>
+      </div>
+
       {isLoading ? (
-        <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center justify-center min-h-[320px]">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading availability...</p>
+            <div className="spinner mx-auto" />
+            <p className="mt-4 text-sm text-stone-500">Loading cabins…</p>
           </div>
         </div>
       ) : error ? (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="card p-5">
           <p className="text-red-700">{error}</p>
-          <button
-            onClick={() => loadAvailability()}
-            className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-          >
+          <button onClick={() => loadAvailability()} className="mt-3 text-sm text-teal-800 font-medium">
             Try again
           </button>
         </div>
       ) : availability.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-600">No cabins available</p>
-        </div>
+        <div className="card p-12 text-center text-stone-500">No cabins available</div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {availability.map((item) => (
             <CabinCard
               key={item.cabin.cabinId}

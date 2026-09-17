@@ -68,10 +68,10 @@ function AppContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <div className="spinner mx-auto" />
+          <p className="mt-4 text-sm text-stone-500">Loading…</p>
         </div>
       </div>
     );
@@ -79,39 +79,27 @@ function AppContent() {
 
   if (!isGoogleAuth || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md bg-white p-8 rounded-lg shadow-lg">
-          <svg
-            className="mx-auto h-16 w-16 text-blue-600"
-            width="64"
-            height="64"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
-          <h1 className="mt-4 text-3xl font-bold text-gray-900">
-            Cabin Booking System
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="card w-full max-w-md p-8 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-800 text-white text-lg font-semibold">
+            C
+          </span>
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight text-stone-900">
+            Cabin Booking
           </h1>
-          <p className="mt-2 text-gray-600">
-            Sign in with your CodeAce Google account to continue
+          <p className="mt-2 text-sm text-stone-500 leading-relaxed">
+            Book a meeting cabin with your CodeAce Google account.
           </p>
-          
+
           {error && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            <div className="mt-5 p-3 rounded-xl bg-red-50 text-sm text-red-700">
               {error}
             </div>
           )}
-          
+
           <button
             onClick={() => googleLogin()}
-            className="mt-6 w-full flex items-center justify-center gap-3 px-6 py-3 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            className="mt-6 w-full flex items-center justify-center gap-3 px-6 py-3 rounded-xl bg-white border border-stone-200 hover:bg-stone-50 transition-colors"
           >
             <svg className="w-5 h-5" width="20" height="20" viewBox="0 0 24 24">
               <path
@@ -131,11 +119,11 @@ function AppContent() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            <span className="font-medium text-gray-700">Sign in with Google</span>
+            <span className="font-medium text-stone-800">Continue with Google</span>
           </button>
-          
-          <p className="mt-4 text-xs text-gray-500">
-            Only CodeAce company accounts can access this system
+
+          <p className="mt-4 text-xs text-stone-400">
+            Only @codeace.com accounts can sign in
           </p>
         </div>
       </div>
@@ -144,7 +132,7 @@ function AppContent() {
 
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen">
         <Header user={user} onSignOut={handleSignOut} />
         <Routes>
           <Route
@@ -181,11 +169,11 @@ function AppContent() {
 function App() {
   if (!GOOGLE_CLIENT_ID) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center max-w-md">
-          <h2 className="text-2xl font-bold text-gray-900">Configuration Error</h2>
-          <p className="mt-2 text-gray-600">
-            Google Client ID is not configured. Please set VITE_GOOGLE_CLIENT_ID in environment variables.
+          <h2 className="text-xl font-semibold text-stone-900">Configuration needed</h2>
+          <p className="mt-2 text-sm text-stone-500">
+            Set VITE_GOOGLE_CLIENT_ID in the environment variables.
           </p>
         </div>
       </div>

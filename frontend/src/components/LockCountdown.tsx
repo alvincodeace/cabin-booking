@@ -29,31 +29,20 @@ export function LockCountdown({
   };
 
   return (
-    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-      <div className="text-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          Cabin Reserved for You
-        </h3>
-        <div className="text-3xl font-bold text-yellow-600 mb-1">
+    <div className="rounded-2xl bg-amber-50 px-5 py-6">
+      <div className="text-center mb-5">
+        <p className="text-sm font-medium text-stone-500">Slot held for you</p>
+        <div className="mt-2 text-4xl font-semibold tabular-nums tracking-tight text-stone-900">
           {formattedTime}
         </div>
-        <p className="text-sm text-gray-600">remaining</p>
+        <p className="mt-1 text-sm text-stone-500">Confirm before this runs out</p>
       </div>
-
       <div className="flex gap-3">
-        <button
-          onClick={handleCancel}
-          disabled={isConfirming}
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <button onClick={handleCancel} disabled={isConfirming} className="btn-secondary flex-1">
           Cancel
         </button>
-        <button
-          onClick={onConfirm}
-          disabled={isConfirming}
-          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isConfirming ? 'Confirming...' : 'Confirm Booking'}
+        <button onClick={onConfirm} disabled={isConfirming} className="btn-primary flex-1">
+          {isConfirming ? 'Confirming…' : 'Confirm booking'}
         </button>
       </div>
     </div>
