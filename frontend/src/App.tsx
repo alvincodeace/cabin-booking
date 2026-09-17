@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import type { User } from './types';
-import { getCurrentUser } from './api/appsScript';
+import { getCurrentUser, getStoredAccessToken, setAccessToken } from './api/appsScript';
 import { Header } from './components/Header';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Dashboard } from './pages/Dashboard';
@@ -21,41 +21,38 @@ function AppContent() {
     onSuccess: (tokenResponse) => {
       setIsLoading(true);
       setError(null);
-      setIsGoogleAuth(true);
-      loadUserWithToken(tokenResponse.access_token);
+      setAccessToken(tokenResponse.access_token);
+      loadUser(false);
     },
     onError: () => {
       setError('Google Sign-In failed. Please try again.');
       setIsLoading(false);
     },
-    hosted_domain: 'codeace.com', // Restrict to your company domain
+    scope: 'openid email profile',
+    hosted_domain: 'codeace.com',
   });
 
   useEffect(() => {
-    // Check if we have a stored access token
-    const storedToken = localStorage.getItem('google_access_token');
-    if (storedToken) {
-      setIsGoogleAuth(true);
-      loadUserWithToken(storedToken);
+    if (getStoredAccessToken()) {
+      loadUser(true);
     } else {
       setIsLoading(false);
     }
   }, []);
 
-  const loadUserWithToken = async (token: string) => {
+  const loadUser = async (silent: boolean) => {
     try {
-      // Store token for future use
-      localStorage.setItem('google_access_token', token);
-      
-      const userData = await getCurrentUser(token);
+      const userData = await getCurrentUser();
       setUser(userData);
       setIsGoogleAuth(true);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to authenticate');
-      setIsGoogleAuth(false);
+    } catch (err: unknown) {
+      setAccessToken(null);
       setUser(null);
-      localStorage.removeItem('google_access_token');
+      setIsGoogleAuth(false);
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Failed to authenticate');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -78,6 +75,8 @@ function AppContent() {
         <div className="text-center max-w-md bg-white p-8 rounded-lg shadow-lg">
           <svg
             className="mx-auto h-16 w-16 text-blue-600"
+            width="64"
+            height="64"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -106,7 +105,7 @@ function AppContent() {
             onClick={() => googleLogin()}
             className="mt-6 w-full flex items-center justify-center gap-3 px-6 py-3 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" width="20" height="20" viewBox="0 0 24 24">
               <path
                 fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"

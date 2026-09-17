@@ -11,48 +11,113 @@ import type {
 } from '../types';
 
 const API_URL = import.meta.env.VITE_APPS_SCRIPT_URL;
+const TOKEN_STORAGE_KEY = 'google_access_token';
 
-if (!API_URL) {
-  console.error('VITE_APPS_SCRIPT_URL is not configured');
+let accessToken: string | null =
+  typeof window !== 'undefined' ? localStorage.getItem(TOKEN_STORAGE_KEY) : null;
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }
+}
+
+export function getStoredAccessToken(): string | null {
+  if (accessToken) {
+    return accessToken;
+  }
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  accessToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+  return accessToken;
+}
+
+function getFriendlyErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    message === 'Failed to fetch' ||
+    message.toLowerCase().includes('networkerror') ||
+    message.toLowerCase().includes('load failed')
+  ) {
+    return 'Cannot reach the booking server. Use the public Apps Script URL (script.google.com/macros/s/.../exec, not /a/macros/) and deploy it as Execute as: Me, Who has access: Anyone.';
+  }
+  return message;
+}
+
+function toQueryValue(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 async function apiCall<T>(
   action: string,
-  params?: Record<string, any>,
-  method: 'GET' | 'POST' = 'GET',
-  accessToken?: string
+  params?: object,
+  method: 'GET' | 'POST' = 'GET'
 ): Promise<T> {
+  if (!API_URL) {
+    throw new Error('VITE_APPS_SCRIPT_URL is not configured');
+  }
+
+  const token = getStoredAccessToken();
+  const payload: Record<string, unknown> = {
+    action,
+    ...(params || {}),
+  };
+
+  if (token) {
+    payload.accessToken = token;
+  }
+
   try {
-    let url = API_URL;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    // Add OAuth token if provided
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-
-    let options: RequestInit = {
-      credentials: 'include',
-      headers,
-    };
+    let response: Response;
 
     if (method === 'GET') {
-      const queryParams = new URLSearchParams({ action, ...params });
-      url = `${API_URL}?${queryParams}`;
+      const queryParams = new URLSearchParams();
+      Object.entries(payload).forEach(([key, value]) => {
+        const serialized = toQueryValue(value);
+        if (serialized !== null) {
+          queryParams.set(key, serialized);
+        }
+      });
+
+      // Simple GET with no custom headers — Apps Script cannot handle CORS preflight.
+      response = await fetch(`${API_URL}?${queryParams.toString()}`, {
+        method: 'GET',
+        redirect: 'follow',
+      });
     } else {
-      options.method = 'POST';
-      options.body = JSON.stringify({ action, ...params });
+      // text/plain avoids a CORS preflight; Apps Script still receives the JSON body.
+      response = await fetch(API_URL, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
     }
 
-    const response = await fetch(url, options);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    const text = await response.text();
+    let result: ApiResponse<T>;
+    try {
+      result = JSON.parse(text) as ApiResponse<T>;
+    } catch {
+      throw new Error(
+        'Backend returned a login page instead of JSON. Redeploy the web app as Execute as: Me and Who has access: Anyone, then use the /macros/s/.../exec URL.'
+      );
     }
-
-    const result: ApiResponse<T> = await response.json();
 
     if (!result.success) {
       throw new Error(result.error?.message || 'API request failed');
@@ -60,31 +125,32 @@ async function apiCall<T>(
 
     return result.data as T;
   } catch (error) {
+    const friendlyError = new Error(getFriendlyErrorMessage(error));
     console.error('API call failed:', error);
-    throw error;
+    throw friendlyError;
   }
 }
 
-export async function getCurrentUser(accessToken?: string): Promise<User> {
-  return apiCall<User>('currentUser', {}, 'GET', accessToken);
+export async function getCurrentUser(): Promise<User> {
+  return apiCall<User>('currentUser');
 }
 
 export async function getCabins(): Promise<Cabin[]> {
-  return apiCall<Cabin[]>('cabins', {}, 'GET');
+  return apiCall<Cabin[]>('cabins');
 }
 
 export async function getBookings(date: string): Promise<Booking[]> {
-  return apiCall<Booking[]>('bookings', { date }, 'GET');
+  return apiCall<Booking[]>('bookings', { date });
 }
 
 export async function getCabinAvailability(
   date: string
 ): Promise<CabinAvailability[]> {
-  return apiCall<CabinAvailability[]>('availability', { date }, 'GET');
+  return apiCall<CabinAvailability[]>('availability', { date });
 }
 
 export async function getMyBookings(): Promise<Booking[]> {
-  return apiCall<Booking[]>('myBookings', {}, 'GET');
+  return apiCall<Booking[]>('myBookings');
 }
 
 export async function createLock(
@@ -112,17 +178,16 @@ export async function cancelBooking(bookingId: string): Promise<void> {
 }
 
 export async function getSettings(): Promise<Settings> {
-  return apiCall<Settings>('settings', {}, 'GET');
+  return apiCall<Settings>('settings');
 }
 
-// Admin APIs
 export async function getAllBookings(filters?: {
   date?: string;
   cabinId?: string;
   userEmail?: string;
   status?: string;
 }): Promise<Booking[]> {
-  return apiCall<Booking[]>('allBookings', filters, 'GET');
+  return apiCall<Booking[]>('allBookings', filters);
 }
 
 export async function createCabin(cabin: Omit<Cabin, 'cabinId' | 'createdAt'>): Promise<Cabin> {
@@ -141,7 +206,7 @@ export async function updateCabinStatus(
 }
 
 export async function getAllUsers(): Promise<User[]> {
-  return apiCall<User[]>('allUsers', {}, 'GET');
+  return apiCall<User[]>('allUsers');
 }
 
 export async function createUser(user: Omit<User, 'createdAt'>): Promise<User> {
@@ -164,7 +229,7 @@ export async function updateSettings(settings: Settings): Promise<Settings> {
 }
 
 export async function getActiveLocks(): Promise<number> {
-  return apiCall<number>('activeLocks', {}, 'GET');
+  return apiCall<number>('activeLocks');
 }
 
 export async function getTodayStats(): Promise<{
@@ -173,5 +238,5 @@ export async function getTodayStats(): Promise<{
   todayBookings: number;
   activeLocks: number;
 }> {
-  return apiCall('todayStats', {}, 'GET');
+  return apiCall('todayStats');
 }
