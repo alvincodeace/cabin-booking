@@ -19,15 +19,23 @@ if (!API_URL) {
 async function apiCall<T>(
   action: string,
   params?: Record<string, any>,
-  method: 'GET' | 'POST' = 'GET'
+  method: 'GET' | 'POST' = 'GET',
+  accessToken?: string
 ): Promise<T> {
   try {
     let url = API_URL;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add OAuth token if provided
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
     let options: RequestInit = {
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     };
 
     if (method === 'GET') {
@@ -57,8 +65,8 @@ async function apiCall<T>(
   }
 }
 
-export async function getCurrentUser(): Promise<User> {
-  return apiCall<User>('currentUser', {}, 'GET');
+export async function getCurrentUser(accessToken?: string): Promise<User> {
+  return apiCall<User>('currentUser', {}, 'GET', accessToken);
 }
 
 export async function getCabins(): Promise<Cabin[]> {

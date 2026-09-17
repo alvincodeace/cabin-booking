@@ -16,13 +16,15 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isGoogleAuth, setIsGoogleAuth] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   const googleLogin = useGoogleLogin({
-    onSuccess: () => {
+    onSuccess: (tokenResponse) => {
       setIsLoading(true);
       setError(null);
+      setAccessToken(tokenResponse.access_token);
       setIsGoogleAuth(true);
-      loadUser();
+      loadUserWithToken(tokenResponse.access_token);
     },
     onError: () => {
       setError('Google Sign-In failed. Please try again.');
@@ -32,14 +34,23 @@ function AppContent() {
   });
 
   useEffect(() => {
-    // Don't check authentication on initial load
-    // User must click "Sign in with Google" button
-    setIsLoading(false);
+    // Check if we have a stored access token
+    const storedToken = localStorage.getItem('google_access_token');
+    if (storedToken) {
+      setAccessToken(storedToken);
+      setIsGoogleAuth(true);
+      loadUserWithToken(storedToken);
+    } else {
+      setIsLoading(false);
+    }
   }, []);
 
-  const loadUser = async () => {
+  const loadUserWithToken = async (token: string) => {
     try {
-      const userData = await getCurrentUser();
+      // Store token for future use
+      localStorage.setItem('google_access_token', token);
+      
+      const userData = await getCurrentUser(token);
       setUser(userData);
       setIsGoogleAuth(true);
       setError(null);
@@ -47,6 +58,7 @@ function AppContent() {
       setError(err.message || 'Failed to authenticate');
       setIsGoogleAuth(false);
       setUser(null);
+      localStorage.removeItem('google_access_token');
     } finally {
       setIsLoading(false);
     }
