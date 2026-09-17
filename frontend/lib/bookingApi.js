@@ -891,6 +891,30 @@ export async function handleBookingApi(req, res) {
       case 'currentUser':
         return ok(res, user);
 
+      case 'recordLogin': {
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'USER_LOGIN',
+          entityType: 'session',
+          entityId: user.email,
+          summary: `${user.name} (${user.role}) signed in`,
+        });
+        return ok(res, null);
+      }
+
+      case 'recordLogout': {
+        await writeAuditLog(supabase, {
+          actorEmail: user.email,
+          actorName: user.name,
+          action: 'USER_LOGOUT',
+          entityType: 'session',
+          entityId: user.email,
+          summary: `${user.name} (${user.role}) signed out`,
+        });
+        return ok(res, null);
+      }
+
       case 'cabins': {
         const { data, error } = await supabase.from('cabins').select('*').order('cabin_name');
         if (error) throw error;

@@ -239,9 +239,10 @@ export async function getTodayStats(): Promise<{
   return apiCall('todayStats');
 }
 
-export async function getAuditLogs(search?: string): Promise<{
-  logs: AuditLog[];
-  setupRequired: boolean;
-}> {
-  return apiCall('auditLogs', { search });
+export async function recordLogin(): Promise<void> {
+  return apiCall<void>('recordLogin');
+}
+
+export async function recordLogout(): Promise<void> {
+  return apiCall<void>('recordLogout');
 }

@@ -153,8 +153,8 @@ Successful actions are stored so admins can see who did what:
 | --- | --- |
 | When | Timestamp (Asia/Kolkata in the Admin screen) |
 | Who | Name and email of the person (or Slack for auto-add) |
-| Action | Book, cancel, cabin/user/settings change |
-| Details | Cabin, time, target user, or what changed |
+| Action | Book, cancel, sign in/out, cabin/user/settings change |
+| Details | Cabin, time, target user, role, or what changed |
 
 View it in **Admin → Activity**. Events from the last 7 days are listed. Older rows are deleted automatically. A week of cabin activity is typically well under 1 MB.
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider, useGoogleLogin, googleLogout } from '@react-oauth/google';
 import type { User } from './types';
-import { getCurrentUser, getStoredAccessToken, setAccessToken } from './api/appsScript';
+import { getCurrentUser, getStoredAccessToken, setAccessToken, recordLogin, recordLogout } from './api/appsScript';
 import { Header } from './components/Header';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Dashboard } from './pages/Dashboard';
@@ -46,6 +46,13 @@ function AppContent() {
       setUser(userData);
       setIsGoogleAuth(true);
       setError(null);
+      if (!silent) {
+        try {
+          await recordLogin();
+        } catch {
+          // Keep the session even if the activity log write fails.
+        }
+      }
     } catch (err: unknown) {
       setAccessToken(null);
       setUser(null);
@@ -58,7 +65,12 @@ function AppContent() {
     }
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      await recordLogout();
+    } catch {
+      // Still sign out locally if the log write fails.
+    }
     googleLogout();
     setAccessToken(null);
     setUser(null);

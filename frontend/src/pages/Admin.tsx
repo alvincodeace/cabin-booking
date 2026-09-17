@@ -42,6 +42,8 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   USER_DEACTIVATED: 'Deactivated user',
   USER_ROLE_CHANGED: 'Changed role',
   SETTINGS_UPDATED: 'Updated settings',
+  USER_LOGIN: 'Signed in',
+  USER_LOGOUT: 'Signed out',
 };
 
 function formatAuditTime(value: string) {
