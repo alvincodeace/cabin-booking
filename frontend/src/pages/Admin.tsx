@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { User, Booking, Cabin } from '../types';
+import type { User, UserRole, Booking, Cabin } from '../types';
 import {
   getTodayStats,
   getAllBookings,
@@ -10,6 +10,7 @@ import {
   updateCabin,
   deleteCabin,
   updateUserStatus,
+  updateUserRole,
   getSettings,
   updateSettings,
   createUser,
@@ -25,6 +26,8 @@ interface AdminProps {
 type Tab = 'overview' | 'bookings' | 'cabins' | 'users' | 'settings';
 
 type BulkUser = Omit<User, 'createdAt'>;
+
+const USER_ROLES: UserRole[] = ['EMPLOYEE', 'TEAM_LEAD', 'ADMIN'];
 
 function detectDelimiter(line: string): string {
   const comma = (line.match(/,/g) || []).length;
@@ -159,6 +162,7 @@ export function Admin({ user }: AdminProps) {
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [isSavingBulkUsers, setIsSavingBulkUsers] = useState(false);
   const [isImportingSlack, setIsImportingSlack] = useState(false);
+  const [updatingRoleEmail, setUpdatingRoleEmail] = useState<string | null>(null);
   const [cabinForm, setCabinForm] = useState({
     cabinId: '',
     cabinName: '',
@@ -309,6 +313,31 @@ export function Admin({ user }: AdminProps) {
       loadData();
     } catch (err: any) {
       alert(err.message || 'Failed to update user status');
+    }
+  };
+
+  const handleChangeUserRole = async (target: User, role: UserRole) => {
+    if (target.email === user.email || target.role === role) {
+      return;
+    }
+    if (target.role === 'ADMIN' && role !== 'ADMIN') {
+      const activeAdmins = users.filter((item) => item.role === 'ADMIN' && item.active).length;
+      if (activeAdmins <= 1) {
+        alert('Keep at least one admin');
+        return;
+      }
+    }
+    setUpdatingRoleEmail(target.email);
+    try {
+      const updated = await updateUserRole(target.email, role);
+      setUsers((current) =>
+        current.map((item) => (item.email === updated.email ? { ...item, role: updated.role } : item))
+      );
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update user role');
+      loadData();
+    } finally {
+      setUpdatingRoleEmail(null);
     }
   };
 
@@ -810,9 +839,26 @@ export function Admin({ user }: AdminProps) {
                           {u.department}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-                            {u.role}
-                          </span>
+                          <select
+                            value={u.role}
+                            disabled={u.email === user.email || updatingRoleEmail === u.email}
+                            aria-label={`Role for ${u.name}`}
+                            title={
+                              u.email === user.email
+                                ? 'You cannot change your own role'
+                                : 'Change role'
+                            }
+                            onChange={(event) =>
+                              handleChangeUserRole(u, event.target.value as UserRole)
+                            }
+                            className="input py-1 pr-8 text-xs w-auto min-w-[8.5rem]"
+                          >
+                            {USER_ROLES.map((role) => (
+                              <option key={role} value={role}>
+                                {role.replace('_', ' ')}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span

@@ -1401,6 +1401,56 @@ export async function handleBookingApi(req, res) {
         return ok(res, null);
       }
 
+      case 'updateUserRole': {
+        if (!requireAdmin(user)) {
+          return fail(res, 'UNAUTHORIZED', 'Admin access required');
+        }
+        const email = String(payload.email || '').trim().toLowerCase();
+        const role = String(payload.role || '').trim().toUpperCase();
+        if (!email) {
+          return fail(res, 'INVALID_INPUT', 'Email is required');
+        }
+        if (!VALID_ROLES.includes(role)) {
+          return fail(res, 'INVALID_INPUT', 'Role must be ADMIN, TEAM_LEAD, or EMPLOYEE');
+        }
+        if (email === user.email) {
+          return fail(res, 'INVALID_INPUT', 'You cannot change your own role');
+        }
+
+        const { data: existing, error: existingError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (!existing) {
+          return fail(res, 'USER_NOT_FOUND', 'User not found');
+        }
+        if (existing.role === role) {
+          return ok(res, mapUser(existing));
+        }
+        if (existing.role === 'ADMIN' && role !== 'ADMIN') {
+          const { count, error: countError } = await supabase
+            .from('users')
+            .select('email', { count: 'exact', head: true })
+            .eq('role', 'ADMIN')
+            .eq('active', true);
+          if (countError) throw countError;
+          if ((count || 0) <= 1) {
+            return fail(res, 'LAST_ADMIN', 'Keep at least one admin');
+          }
+        }
+
+        const { data, error } = await supabase
+          .from('users')
+          .update({ role })
+          .eq('email', email)
+          .select()
+          .single();
+        if (error) throw error;
+        return ok(res, mapUser(data));
+      }
+
       case 'updateSettings': {
         if (!requireAdmin(user)) {
           return fail(res, 'UNAUTHORIZED', 'Admin access required');

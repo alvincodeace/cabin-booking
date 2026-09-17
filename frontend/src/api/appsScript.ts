@@ -200,6 +200,13 @@ export async function updateUserStatus(
   return apiCall<void>('updateUserStatus', { email, active });
 }
 
+export async function updateUserRole(
+  email: string,
+  role: User['role']
+): Promise<User> {
+  return apiCall<User>('updateUserRole', { email, role });
+}
+
 export async function updateSettings(settings: Settings): Promise<Settings> {
   return apiCall<Settings>('updateSettings', settings);
 }
