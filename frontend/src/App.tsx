@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { GoogleOAuthProvider, useGoogleLogin, googleLogout } from '@react-oauth/google';
+import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import type { User } from './types';
 import { getCurrentUser } from './api/appsScript';
 import { Header } from './components/Header';
