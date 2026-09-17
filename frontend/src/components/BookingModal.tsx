@@ -44,15 +44,17 @@ export function BookingModal({
 
   const filteredMembers = useMemo(() => {
     const query = memberSearch.trim().toLowerCase();
-    if (!query) {
-      return members;
+    if (query.length < 1) {
+      return [];
     }
-    return members.filter(
-      (member) =>
-        member.name.toLowerCase().includes(query) ||
-        member.email.toLowerCase().includes(query) ||
-        member.department.toLowerCase().includes(query)
-    );
+    return members
+      .filter(
+        (member) =>
+          member.name.toLowerCase().includes(query) ||
+          member.email.toLowerCase().includes(query) ||
+          member.department.toLowerCase().includes(query)
+      )
+      .slice(0, 20);
   }, [members, memberSearch]);
 
   const toggleMember = (email: string) => {
@@ -217,35 +219,41 @@ export function BookingModal({
                     })}
                   </div>
                 )}
-                <div className="max-h-40 overflow-y-auto rounded-xl border border-stone-200 divide-y divide-stone-100">
-                  {filteredMembers.length === 0 ? (
-                    <div className="px-3 py-3 text-sm text-stone-500">
-                      No matching members. Ask an admin to add people first.
-                    </div>
-                  ) : (
-                    filteredMembers.map((member) => (
-                      <label
-                        key={member.email}
-                        className="flex items-center gap-3 px-3 py-2 hover:bg-stone-50 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedEmails.includes(member.email)}
-                          onChange={() => toggleMember(member.email)}
-                          disabled={isLoading}
-                          className="rounded border-stone-300 text-teal-800 focus:ring-teal-800"
-                        />
-                        <span>
-                          <span className="block text-sm text-stone-900">{member.name}</span>
-                          <span className="block text-xs text-stone-500">
-                            {member.email}
-                            {member.department ? ` · ${member.department}` : ''}
+                {memberSearch.trim() ? (
+                  <div className="max-h-40 overflow-y-auto rounded-xl border border-stone-200 divide-y divide-stone-100">
+                    {filteredMembers.length === 0 ? (
+                      <div className="px-3 py-3 text-sm text-stone-500">
+                        No matching members
+                      </div>
+                    ) : (
+                      filteredMembers.map((member) => (
+                        <label
+                          key={member.email}
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-stone-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedEmails.includes(member.email)}
+                            onChange={() => toggleMember(member.email)}
+                            disabled={isLoading}
+                            className="rounded border-stone-300 text-teal-800 focus:ring-teal-800"
+                          />
+                          <span>
+                            <span className="block text-sm text-stone-900">{member.name}</span>
+                            <span className="block text-xs text-stone-500">
+                              {member.email}
+                              {member.department ? ` · ${member.department}` : ''}
+                            </span>
                           </span>
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-400">
+                    Search by name or email to add people
+                  </p>
+                )}
                 {overCapacity && (
                   <p className="mt-2 text-xs text-amber-700">
                     More people than this cabin holds ({cabin.capacity}).
