@@ -39,6 +39,17 @@ function todayInKolkata() {
   }).format(new Date());
 }
 
+function nowInKolkata() {
+  const stamp = new Date().toLocaleString('sv-SE', { timeZone: TIMEZONE });
+  const [date, clock] = stamp.split(' ');
+  return { date, time: (clock || '').slice(0, 5) };
+}
+
+function isPastSlot(date, startTime) {
+  const now = nowInKolkata();
+  return date < now.date || (date === now.date && startTime <= now.time);
+}
+
 function toIso(value) {
   if (!value) return value;
   return new Date(value).toISOString();
@@ -861,6 +872,8 @@ export async function handleBookingApi(req, res) {
               if (overlappingBooking) {
                 slot.status = 'BOOKED';
                 slot.booking = mapBooking(overlappingBooking);
+              } else if (isPastSlot(payload.date, startTime)) {
+                slot.status = 'DISABLED';
               } else {
                 const overlappingLock = (locks || []).find(
                   (lock) =>

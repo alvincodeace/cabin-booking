@@ -170,6 +170,9 @@ export function Dashboard({ user }: DashboardProps) {
           <span className="h-2.5 w-2.5 rounded-full bg-stone-300" /> Booked
         </span>
         <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-stone-200" /> Past
+        </span>
+        <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-teal-800" /> Selected
         </span>
         <span className="text-stone-400">
@@ -203,6 +206,7 @@ export function Dashboard({ user }: DashboardProps) {
               key={`${item.cabin.cabinId}-${selectedDate}`}
               cabin={item.cabin}
               slots={item.slots}
+              date={selectedDate}
               user={user}
               maxDurationMinutes={maxDurationMinutes}
               onBookRange={handleBookRange}

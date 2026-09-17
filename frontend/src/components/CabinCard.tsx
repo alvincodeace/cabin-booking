@@ -4,9 +4,21 @@ import type { Cabin, TimeSlot, User } from '../types';
 interface CabinCardProps {
   cabin: Cabin;
   slots: TimeSlot[];
+  date: string;
   user: User;
   maxDurationMinutes: number;
   onBookRange: (cabin: Cabin, startTime: string, endTime: string) => void;
+}
+
+function nowInKolkata() {
+  const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' });
+  const [today, clock] = stamp.split(' ');
+  return { date: today, time: (clock || '').slice(0, 5) };
+}
+
+function isPastSlot(date: string, startTime: string) {
+  const now = nowInKolkata();
+  return date < now.date || (date === now.date && startTime <= now.time);
 }
 
 function timeToMinutes(timeStr: string) {
@@ -19,16 +31,30 @@ function slotEnd(slot: TimeSlot) {
   return `${String(Math.floor((timeToMinutes(slot.time) + 30) / 60)).padStart(2, '0')}:${String((timeToMinutes(slot.time) + 30) % 60).padStart(2, '0')}`;
 }
 
-export function CabinCard({ cabin, slots, user: _user, maxDurationMinutes, onBookRange }: CabinCardProps) {
+export function CabinCard({ cabin, slots, date, user: _user, maxDurationMinutes, onBookRange }: CabinCardProps) {
   const [range, setRange] = useState<{ from: number; to: number } | null>(null);
   const [limitMessage, setLimitMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setRange(null);
     setLimitMessage(null);
-  }, [cabin.cabinId]);
+  }, [cabin.cabinId, date]);
+
+  useEffect(() => {
+    setRange((current) => {
+      if (!current) return current;
+      const selected = slots.slice(current.from, current.to + 1);
+      if (selected.some((slot) => cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE' || isPastSlot(date, slot.time))) {
+        return null;
+      }
+      return current;
+    });
+  }, [slots, date, cabin.status]);
 
   const slotLabel = (slot: TimeSlot) => `${slot.time}–${slotEnd(slot)}`;
+  const slotIsPast = (slot: TimeSlot) => isPastSlot(date, slot.time);
+  const slotIsDisabled = (slot: TimeSlot) =>
+    cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE' || slotIsPast(slot);
 
   const isSelected = (index: number) =>
     Boolean(range && index >= range.from && index <= range.to);
@@ -38,21 +64,21 @@ export function CabinCard({ cabin, slots, user: _user, maxDurationMinutes, onBoo
     if (cabin.status === 'INACTIVE') {
       return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
     }
-    if (isSelected(index)) {
+    if (isSelected(index) && !slotIsDisabled(slot)) {
       return `${base} bg-teal-800 text-white cursor-pointer`;
     }
-    switch (slot.status) {
-      case 'AVAILABLE':
-        return `${base} bg-emerald-50 text-emerald-800 hover:bg-emerald-100 cursor-pointer`;
-      case 'BOOKED':
-        return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
-      case 'LOCKED':
-        return slot.isOwnLock
-          ? `${base} bg-amber-100 text-amber-800 ring-1 ring-amber-300`
-          : `${base} bg-amber-50 text-amber-700 cursor-not-allowed`;
-      default:
-        return `${base} bg-stone-100 text-stone-400`;
+    if (slot.status === 'BOOKED') {
+      return `${base} bg-stone-100 text-stone-400 cursor-not-allowed`;
     }
+    if (slot.status === 'LOCKED') {
+      return slot.isOwnLock
+        ? `${base} bg-amber-100 text-amber-800 ring-1 ring-amber-300`
+        : `${base} bg-amber-50 text-amber-700 cursor-not-allowed`;
+    }
+    if (slotIsPast(slot) || slot.status === 'DISABLED') {
+      return `${base} bg-stone-50 text-stone-300 cursor-not-allowed line-through`;
+    }
+    return `${base} bg-emerald-50 text-emerald-800 hover:bg-emerald-100 cursor-pointer`;
   };
 
   const slotTitle = (slot: TimeSlot) => {
@@ -63,12 +89,18 @@ export function CabinCard({ cabin, slots, user: _user, maxDurationMinutes, onBoo
     if (slot.status === 'LOCKED') {
       return slot.isOwnLock ? `${label} · held by you` : `${label} · held by someone else`;
     }
-    return slot.status === 'AVAILABLE' ? `${label} · click to select` : label;
+    if (slotIsPast(slot)) {
+      return `${label} · time has passed`;
+    }
+    if (cabin.status === 'INACTIVE' || slot.status === 'DISABLED') {
+      return `${label} · unavailable`;
+    }
+    return `${label} · click to select`;
   };
 
   const canSelectRange = (from: number, to: number) => {
     const slice = slots.slice(from, to + 1);
-    if (!slice.length || slice.some((slot) => slot.status !== 'AVAILABLE')) {
+    if (!slice.length || slice.some((slot) => slotIsDisabled(slot))) {
       return false;
     }
     const duration = timeToMinutes(slotEnd(slots[to])) - timeToMinutes(slots[from].time);
@@ -77,7 +109,7 @@ export function CabinCard({ cabin, slots, user: _user, maxDurationMinutes, onBoo
 
   const handleSlotClick = (index: number) => {
     const slot = slots[index];
-    if (cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE') return;
+    if (slotIsDisabled(slot)) return;
     setLimitMessage(null);
 
     if (range && range.from === index && range.to === index) {
@@ -107,7 +139,9 @@ export function CabinCard({ cabin, slots, user: _user, maxDurationMinutes, onBoo
     setRange({ from: index, to: index });
   };
 
-  const availableCount = slots.filter((slot) => slot.status === 'AVAILABLE' && cabin.status === 'ACTIVE').length;
+  const availableCount = slots.filter(
+    (slot) => slot.status === 'AVAILABLE' && cabin.status === 'ACTIVE' && !slotIsPast(slot)
+  ).length;
   const selectedStart = range ? slots[range.from] : null;
   const selectedEnd = range ? slots[range.to] : null;
 
@@ -142,7 +176,7 @@ export function CabinCard({ cabin, slots, user: _user, maxDurationMinutes, onBoo
             title={slotTitle(slot)}
             onClick={() => handleSlotClick(index)}
             className={getSlotClassName(slot, index)}
-            disabled={cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE'}
+            disabled={slotIsDisabled(slot)}
           >
             {slotLabel(slot)}
           </button>
