@@ -19,19 +19,22 @@ function AppContent() {
 
   const googleLogin = useGoogleLogin({
     onSuccess: () => {
+      setIsLoading(true);
+      setError(null);
       setIsGoogleAuth(true);
       loadUser();
     },
     onError: () => {
-      setError('Google Sign-In failed');
+      setError('Google Sign-In failed. Please try again.');
       setIsLoading(false);
     },
     hosted_domain: 'codeace.com', // Restrict to your company domain
   });
 
   useEffect(() => {
-    // Check if already signed in
-    loadUser();
+    // Don't check authentication on initial load
+    // User must click "Sign in with Google" button
+    setIsLoading(false);
   }, []);
 
   const loadUser = async () => {
@@ -39,9 +42,11 @@ function AppContent() {
       const userData = await getCurrentUser();
       setUser(userData);
       setIsGoogleAuth(true);
+      setError(null);
     } catch (err: any) {
       setError(err.message || 'Failed to authenticate');
       setIsGoogleAuth(false);
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
