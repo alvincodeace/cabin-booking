@@ -235,6 +235,26 @@ function isMissingRelation(error) {
   );
 }
 
+const AUDIT_RETENTION_DAYS = 7;
+
+function auditRetentionCutoff() {
+  return new Date(Date.now() - AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
+async function pruneAuditLogs(supabase) {
+  try {
+    const { error } = await supabase
+      .from('audit_logs')
+      .delete()
+      .lt('created_at', auditRetentionCutoff());
+    if (error && !isMissingRelation(error)) {
+      console.error('Audit prune failed:', errorMessage(error));
+    }
+  } catch (error) {
+    console.error('Audit prune failed:', error);
+  }
+}
+
 async function writeAuditLog(supabase, entry) {
   try {
     const { error } = await supabase.from('audit_logs').insert({
@@ -248,6 +268,7 @@ async function writeAuditLog(supabase, entry) {
     if (error && !isMissingRelation(error)) {
       console.error('Audit log failed:', errorMessage(error));
     }
+    await pruneAuditLogs(supabase);
   } catch (error) {
     console.error('Audit log failed:', error);
   }
@@ -1619,11 +1640,14 @@ export async function handleBookingApi(req, res) {
           .trim()
           .replace(/[%*,()]/g, ' ')
           .slice(0, 80);
+        const cutoff = auditRetentionCutoff();
+        await pruneAuditLogs(supabase);
         let query = supabase
           .from('audit_logs')
           .select('*')
+          .gte('created_at', cutoff)
           .order('created_at', { ascending: false })
-          .limit(200);
+          .limit(5000);
         if (search) {
           const term = `%${search}%`;
           query = query.or(

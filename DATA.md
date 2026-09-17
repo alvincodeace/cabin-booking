@@ -156,7 +156,9 @@ Successful actions are stored so admins can see who did what:
 | Action | Book, cancel, cabin/user/settings change |
 | Details | Cabin, time, target user, or what changed |
 
-View it in **Admin → Activity**. Only admins can read this list. Failed attempts are not stored.
+View it in **Admin → Activity**. Events from the last 7 days are listed. Older rows are deleted automatically. A week of cabin activity is typically well under 1 MB.
+
+Only admins can read this list. Failed attempts are not stored.
 
 ---
 

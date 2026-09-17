@@ -931,7 +931,7 @@ export function Admin({ user }: AdminProps) {
                 <div className="flex-1">
                   <h2 className="text-lg font-semibold text-gray-900">Activity</h2>
                   <p className="text-sm text-stone-500 mt-0.5">
-                    Who did what, after it succeeded. Latest 200 events.
+                    Who did what, after it succeeded. Kept for 7 days, then deleted.
                   </p>
                 </div>
                 <form

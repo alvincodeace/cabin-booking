@@ -81,9 +81,11 @@ function AppContent() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="card w-full max-w-md p-8 text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-800 text-white text-lg font-semibold">
-            C
-          </span>
+          <img
+            src="/logo-mark.png"
+            alt="CodeAce"
+            className="mx-auto h-12 w-12 rounded-2xl"
+          />
           <h1 className="mt-5 text-2xl font-semibold tracking-tight text-stone-900">
             Cabin Booking
           </h1>

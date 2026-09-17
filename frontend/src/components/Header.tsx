@@ -75,9 +75,7 @@ export function Header({ user, onSignOut }: HeaderProps) {
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex justify-between items-center h-16">
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-800 text-white text-sm font-semibold">
-              C
-            </span>
+            <img src="/logo-mark.png" alt="CodeAce" className="h-8 w-8 rounded-lg" />
             <span className="text-base font-semibold tracking-tight text-stone-900">
               Cabin Booking
             </span>
