@@ -16,7 +16,7 @@ create table if not exists cabins (
   cabin_id text primary key,
   cabin_name text not null,
   location text not null default '',
-  capacity integer not null default 4,
+  capacity integer not null default 4 check (capacity between 1 and 50),
   description text not null default '',
   status text not null default 'ACTIVE' check (status in ('ACTIVE', 'INACTIVE')),
   created_at timestamptz not null default now()
@@ -51,9 +51,9 @@ create table if not exists locks (
 
 create table if not exists settings (
   id integer primary key default 1 check (id = 1),
-  lock_duration_minutes integer not null default 5,
-  max_booking_duration_minutes integer not null default 60,
-  advance_booking_days integer not null default 30
+  lock_duration_minutes integer not null default 5 check (lock_duration_minutes between 1 and 30),
+  max_booking_duration_minutes integer not null default 60 check (max_booking_duration_minutes between 15 and 240),
+  advance_booking_days integer not null default 30 check (advance_booking_days between 1 and 90)
 );
 
 create table if not exists booking_attendees (
@@ -104,6 +104,25 @@ alter table settings enable row level security;
 alter table booking_attendees enable row level security;
 alter table notifications enable row level security;
 alter table audit_logs enable row level security;
+
+-- Defense-in-depth: explicit DENY policies (service_role bypasses RLS; these document deny-by-default for anon/authenticated)
+-- If anon key leaked, no rows leak. Future migration to authenticated RLS can replace with USING checks.
+drop policy if exists "deny anon all users" on users;
+create policy "deny anon all users" on users for all to anon using (false);
+drop policy if exists "deny anon all cabins" on cabins;
+create policy "deny anon all cabins" on cabins for all to anon using (false);
+drop policy if exists "deny anon all bookings" on bookings;
+create policy "deny anon all bookings" on bookings for all to anon using (false);
+drop policy if exists "deny anon all locks" on locks;
+create policy "deny anon all locks" on locks for all to anon using (false);
+drop policy if exists "deny anon all settings" on settings;
+create policy "deny anon all settings" on settings for all to anon using (false);
+drop policy if exists "deny anon all attendees" on booking_attendees;
+create policy "deny anon all attendees" on booking_attendees for all to anon using (false);
+drop policy if exists "deny anon all notifications" on notifications;
+create policy "deny anon all notifications" on notifications for all to anon using (false);
+drop policy if exists "deny anon all audit" on audit_logs;
+create policy "deny anon all audit" on audit_logs for all to anon using (false);
 
 insert into settings (id, lock_duration_minutes, max_booking_duration_minutes, advance_booking_days)
 values (1, 5, 60, 30)

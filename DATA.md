@@ -15,7 +15,7 @@ When someone clicks **Continue with Google**, the app receives:
 | Work email | Identify the person. Must already exist in Users. |
 | Display name | Keep the user record in sync if Google has a name |
 
-The Google access token is kept in the browser (`localStorage`) so API calls stay signed in. It is sent to the booking API to verify the account. The app does not store Google passwords or a Google refresh token.
+The Google access token is kept in-memory and mirrored to `sessionStorage` (cleared on tab close, 55m TTL) so API calls stay signed in within the tab. Legacy `localStorage` tokens are purged on upgrade. The token is sent in the JSON body to the booking API (verified with `aud/azp` + `hd` + `email_verified`) and revoked on logout (`POST https://oauth2.googleapis.com/revoke`). The app does not store Google passwords, refresh tokens, or HttpOnly cookies yet — full HttpOnly `SameSite=Lax` session migration is roadmap P0 for XSS resilience.
 
 People who are not in the Users list cannot sign in, even with a valid Google account.
 
@@ -117,7 +117,7 @@ The app does not post booking details to a Slack channel.
 
 | Item | Purpose |
 | --- | --- |
-| Google access token | Stay signed in |
+| Google access token (in-memory + `sessionStorage`, 55m) | Stay signed in within tab; revoked on sign-out |
 
 No booking history is stored only in the browser; it lives in the database.
 
