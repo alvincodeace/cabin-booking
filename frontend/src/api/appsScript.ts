@@ -13,9 +13,10 @@ import type {
 } from '../types';
 
 const API_URL = '/api';
-// MED-1 fix: in-memory only; sessionStorage is opt-in short-lived fallback.
-// localStorage removed so token is not durable across tabs/extensions/XSS persistence.
-// For production, migrate to HttpOnly SameSite=Lax session cookie via server auth-code flow.
+// MED-1 fix: in-memory primary + sessionStorage tab-scoped fallback (55m). Server now also sets
+// HttpOnly SameSite=Lax __Host-session cookie (lib/bookingApi.js:setSessionCookie) on each auth'd response.
+// Future: remove token from body entirely and rely solely on cookie (auth-code flow). Until then, send both
+// with credentials: 'include' so COOP/CORS path works and XSS cannot read HttpOnly cookie.
 const TOKEN_SESSION_KEY = 'google_access_token';
 const TOKEN_EXPIRES_AT_KEY = 'google_access_token_expires_at';
 const TOKEN_TTL_MS = 55 * 60 * 1000; // refresh a bit before Google 60m expiry
@@ -150,6 +151,7 @@ async function apiCall<T>(action: string, params?: object): Promise<T> {
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
       body: JSON.stringify(payload),
     });
 

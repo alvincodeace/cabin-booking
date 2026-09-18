@@ -712,11 +712,12 @@ export async function processSlackEvent(headers, rawBody) {
 async function verifyGoogleToken(accessToken) {
   // Fetch tokeninfo first so we can validate aud/azp (audience) before trusting email.
   // Prevents cross-app token replay: token minted for another OAuth client must be rejected.
-  const expectedAud = (
-    process.env.GOOGLE_CLIENT_ID ||
-    process.env.VITE_GOOGLE_CLIENT_ID ||
-    '435675909726-7sg9m9si5vumqrv74qsa8bkhkvknns5h.apps.googleusercontent.com'
-  ).trim();
+  const envAud = (process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+  if (!envAud) {
+    console.error('GOOGLE_CLIENT_ID not configured — rejecting token (fail-closed)');
+    return null;
+  }
+  const expectedAud = envAud;
   const allowedAuds = new Set(
     expectedAud
       .split(',')
@@ -762,7 +763,13 @@ async function verifyGoogleToken(accessToken) {
   }
 
   if (!profile || !profile._audOk) {
-    // Fallback to userinfo only if tokeninfo unavailable, but still validate via tokeninfo aud if we have it
+    // Fail-closed: if tokeninfo succeeded (tokenInfo non-null) but aud failed we already returned null above.
+    // If tokeninfo was unreachable (network error, tokenInfo === null), fail closed — do not accept userinfo alone
+    // without aud proof. This prevents aud bypass when Google tokeninfo transiently down (P0 #9).
+    if (tokenInfo === null) {
+      console.warn('tokeninfo unavailable — failing closed (no aud proof)');
+      return null;
+    }
     const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -933,6 +940,40 @@ function clientIpFromReq(req) {
   const xf = String(req.headers?.['x-forwarded-for'] || req.headers?.['X-Forwarded-For'] || '').split(',')[0].trim();
   return xf || String(req.headers?.['x-real-ip'] || req.socket?.remoteAddress || 'unknown');
 }
+const SESSION_COOKIE = '__Host-session';
+const SESSION_MAX_AGE = 55 * 60; // 55m seconds, matches Google 60m
+function parseCookies(header) {
+  const out = {};
+  if (!header) return out;
+  for (const part of String(header).split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    try { out[k] = decodeURIComponent(v); } catch { out[k] = v; }
+  }
+  return out;
+}
+function setSessionCookie(res, token) {
+  try {
+    const val = encodeURIComponent(token);
+    // __Host- requires Secure, Path=/, no Domain
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${val}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}`);
+  } catch {}
+}
+function clearSessionCookie(res) {
+  try {
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  } catch {}
+}
+function getAccessTokenFromRequest(req, payload) {
+  if (payload && typeof payload.accessToken === 'string' && payload.accessToken) return payload.accessToken;
+  const cookies = parseCookies(req.headers?.cookie || req.headers?.Cookie || '');
+  if (cookies[SESSION_COOKIE]) return cookies[SESSION_COOKIE];
+  const auth = String(req.headers?.authorization || req.headers?.Authorization || '');
+  if (auth.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
+  return '';
+}
 function setSecurityHeaders(res) {
   try {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -940,6 +981,8 @@ function setSecurityHeaders(res) {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   } catch {
     // ignore if headers already sent
   }
@@ -955,9 +998,20 @@ async function revokeGoogleToken(accessToken) {
 export async function handleBookingApi(req, res) {
   try {
     setSecurityHeaders(res);
-    // CORS: only allow same-origin / codeace.org; JSON POST will preflight. No wildcard.
+    // CORS: strict allowlist — require https + exact or .subdomain. Prevents evilcodeace.org suffix bypass (V2).
     const origin = String(req.headers?.origin || '');
-    const allowedOrigin = origin.endsWith('codeace.org') || origin.endsWith('codeace.com') ? origin : '';
+    function isAllowedOrigin(o) {
+      if (!o) return false;
+      try {
+        const u = new URL(o);
+        if (u.protocol !== 'https:') return false;
+        const h = u.hostname.toLowerCase();
+        return h === 'cabin.codeace.org' || h === 'cabin.codeace.com' || h.endsWith('.codeace.org') || h.endsWith('.codeace.com');
+      } catch {
+        return false;
+      }
+    }
+    const allowedOrigin = isAllowedOrigin(origin) ? origin : '';
     if (req.method === 'OPTIONS') {
       if (allowedOrigin) res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
       res.setHeader('Vary', 'Origin');
@@ -992,15 +1046,18 @@ export async function handleBookingApi(req, res) {
       return fail(res, 'ACTION_REQUIRED', 'Action parameter is required');
     }
 
-    const accessToken = payload.accessToken;
+    const accessToken = getAccessTokenFromRequest(req, payload);
     if (!accessToken) {
       return fail(res, 'UNAUTHORIZED', 'Sign in with Google to continue');
     }
 
     const profile = await verifyGoogleToken(accessToken);
     if (!profile) {
+      clearSessionCookie(res);
       return fail(res, 'UNAUTHORIZED', 'Only @codeace.com accounts can sign in. Try Sign in with Google again.');
     }
+    // V1 mitigation: set HttpOnly SameSite=Lax session cookie (55m) so future requests can omit token body
+    setSessionCookie(res, accessToken);
 
     const supabase = getSupabase();
     const current = await getRegisteredUser(supabase, profile);
@@ -1040,8 +1097,9 @@ export async function handleBookingApi(req, res) {
           entityId: user.email,
           summary: `${user.name} (${user.role}) signed out`,
         });
-        // Best-effort server-side session invalidation: revoke Google token so replay fails
+        // Best-effort server-side session invalidation: revoke Google token so replay fails + clear HttpOnly cookie
         await revokeGoogleToken(accessToken);
+        clearSessionCookie(res);
         return ok(res, null);
       }
 
