@@ -710,27 +710,80 @@ export async function processSlackEvent(headers, rawBody) {
 }
 
 async function verifyGoogleToken(accessToken) {
-  const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  // Fetch tokeninfo first so we can validate aud/azp (audience) before trusting email.
+  // Prevents cross-app token replay: token minted for another OAuth client must be rejected.
+  const expectedAud = (
+    process.env.GOOGLE_CLIENT_ID ||
+    process.env.VITE_GOOGLE_CLIENT_ID ||
+    '435675909726-7sg9m9si5vumqrv74qsa8bkhkvknns5h.apps.googleusercontent.com'
+  ).trim();
+  const allowedAuds = new Set(
+    expectedAud
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+  // Also allow explicit allowlist via env (comma-separated)
+  const extra = String(process.env.GOOGLE_ALLOWED_CLIENT_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const a of extra) allowedAuds.add(a);
 
   let profile = null;
-  if (userInfoResponse.ok) {
-    profile = await userInfoResponse.json();
-  } else {
+  let tokenInfo = null;
+  try {
     const tokenInfoResponse = await fetch(
       `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
     );
     if (tokenInfoResponse.ok) {
-      profile = await tokenInfoResponse.json();
+      tokenInfo = await tokenInfoResponse.json();
+      // Validate audience/azp and expiry/hosted domain before accepting email
+      const aud = String(tokenInfo.aud || tokenInfo.aud || '').trim();
+      const azp = String(tokenInfo.azp || '').trim();
+      const hd = String(tokenInfo.hd || '').trim().toLowerCase();
+      const emailFromInfo = String(tokenInfo.email || '').toLowerCase();
+      const audOk = allowedAuds.has(aud) || allowedAuds.has(azp);
+      const hdOk = !hd || hd === ALLOWED_DOMAIN;
+      const emailVerified = String(tokenInfo.email_verified) === 'true' || tokenInfo.email_verified === true;
+      if (audOk && (!tokenInfo.email || (emailFromInfo.endsWith(`@${ALLOWED_DOMAIN}`) && emailVerified && hdOk))) {
+        profile = {
+          email: emailFromInfo,
+          name: tokenInfo.name || tokenInfo.given_name || '',
+          _audOk: true,
+        };
+      } else if (!audOk) {
+        console.warn('Google token aud mismatch', { aud, azp });
+        return null;
+      }
     }
+  } catch {
+    // fall through to userinfo
+  }
+
+  if (!profile || !profile._audOk) {
+    // Fallback to userinfo only if tokeninfo unavailable, but still validate via tokeninfo aud if we have it
+    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!userInfoResponse.ok) return null;
+    const ui = await userInfoResponse.json();
+    // If we already fetched tokenInfo and aud failed, do not accept userinfo
+    if (tokenInfo && profile === null) return null;
+    // When tokeninfo was unavailable, at least verify hd/email_verified from userinfo
+    const hdUi = String(ui.hd || '').trim().toLowerCase();
+    const verifiedUi = ui.email_verified === true || String(ui.email_verified) === 'true';
+    if (hdUi && hdUi !== ALLOWED_DOMAIN) return null;
+    if (ui.email_verified !== undefined && !verifiedUi) return null;
+    profile = ui;
   }
 
   const email = String(profile?.email || '').toLowerCase();
   if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
     return null;
   }
-
+  // Strip internal flag
+  if (profile._audOk !== undefined) delete profile._audOk;
   return {
     email,
     name: profile.name || email.split('@')[0],
@@ -857,11 +910,80 @@ function normalizeUserInput(payload) {
   };
 }
 
+// LOW-1: simple in-memory rate limiter (per-IP + per-user). For distributed Vercel, pair with edge KV in prod.
+const RATE_WINDOW_MS = 60 * 1000;
+const RATE_MAX_IP = 60; // per IP per minute
+const RATE_MAX_USER = 30; // per authenticated user per minute
+const rateBuckets = new Map(); // key -> { count, resetAt }
+function rateLimitCheck(key, max) {
+  const now = Date.now();
+  let b = rateBuckets.get(key);
+  if (!b || now > b.resetAt) {
+    b = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    rateBuckets.set(key, b);
+  }
+  b.count += 1;
+  if (b.count > max) {
+    const retryAfter = Math.ceil((b.resetAt - now) / 1000);
+    return { limited: true, retryAfter };
+  }
+  return { limited: false };
+}
+function clientIpFromReq(req) {
+  const xf = String(req.headers?.['x-forwarded-for'] || req.headers?.['X-Forwarded-For'] || '').split(',')[0].trim();
+  return xf || String(req.headers?.['x-real-ip'] || req.socket?.remoteAddress || 'unknown');
+}
+function setSecurityHeaders(res) {
+  try {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  } catch {
+    // ignore if headers already sent
+  }
+}
+async function revokeGoogleToken(accessToken) {
+  try {
+    await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(accessToken)}`, { method: 'POST' });
+  } catch {
+    // best-effort
+  }
+}
+
 export async function handleBookingApi(req, res) {
   try {
+    setSecurityHeaders(res);
+    // CORS: only allow same-origin / codeace.org; JSON POST will preflight. No wildcard.
+    const origin = String(req.headers?.origin || '');
+    const allowedOrigin = origin.endsWith('codeace.org') || origin.endsWith('codeace.com') ? origin : '';
     if (req.method === 'OPTIONS') {
+      if (allowedOrigin) res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Max-Age', '600');
       res.status(204).end();
       return;
+    }
+    if (allowedOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+      res.setHeader('Vary', 'Origin');
+    }
+
+    // INFO/CSRF hardening: require JSON content-type (prevents <form> CSRF)
+    const ctype = String(req.headers?.['content-type'] || '').toLowerCase();
+    if (!ctype.includes('application/json')) {
+      return fail(res, 'INVALID_CONTENT_TYPE', 'Invalid request format');
+    }
+
+    // LOW-1: per-IP rate limit (before auth)
+    const ip = clientIpFromReq(req);
+    const ipCheck = rateLimitCheck(`ip:${ip}`, RATE_MAX_IP);
+    if (ipCheck.limited) {
+      res.setHeader('Retry-After', String(ipCheck.retryAfter));
+      return fail(res, 'RATE_LIMITED', 'Too many requests. Please try again shortly.');
     }
 
     const payload = req.body && typeof req.body === 'object' ? req.body : {};
@@ -886,6 +1008,12 @@ export async function handleBookingApi(req, res) {
       return fail(res, current.error.code, current.error.message);
     }
     const user = current.user;
+    // LOW-1: per-user rate limit (after auth, so we have email)
+    const userCheck = rateLimitCheck(`user:${user.email}`, RATE_MAX_USER);
+    if (userCheck.limited) {
+      res.setHeader('Retry-After', String(userCheck.retryAfter));
+      return fail(res, 'RATE_LIMITED', 'Too many requests. Please try again shortly.');
+    }
 
     switch (action) {
       case 'currentUser':
@@ -912,6 +1040,8 @@ export async function handleBookingApi(req, res) {
           entityId: user.email,
           summary: `${user.name} (${user.role}) signed out`,
         });
+        // Best-effort server-side session invalidation: revoke Google token so replay fails
+        await revokeGoogleToken(accessToken);
         return ok(res, null);
       }
 
@@ -1730,6 +1860,7 @@ export async function handleBookingApi(req, res) {
     }
   } catch (error) {
     console.error('Booking API error:', error);
-    return fail(res, 'SERVER_ERROR', errorMessage(error));
+    // LOW-2 fix: never leak infra/stack details to client
+    return fail(res, 'SERVER_ERROR', 'Something went wrong. Please try again later.');
   }
 }
