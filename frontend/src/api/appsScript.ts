@@ -13,42 +13,122 @@ import type {
 } from '../types';
 
 const API_URL = '/api';
-const TOKEN_STORAGE_KEY = 'google_access_token';
+// MED-1 fix: in-memory only; sessionStorage is opt-in short-lived fallback.
+// localStorage removed so token is not durable across tabs/extensions/XSS persistence.
+// For production, migrate to HttpOnly SameSite=Lax session cookie via server auth-code flow.
+const TOKEN_SESSION_KEY = 'google_access_token';
+const TOKEN_EXPIRES_AT_KEY = 'google_access_token_expires_at';
+const TOKEN_TTL_MS = 55 * 60 * 1000; // refresh a bit before Google 60m expiry
 
-let accessToken: string | null =
-  typeof window !== 'undefined' ? localStorage.getItem(TOKEN_STORAGE_KEY) : null;
+let accessToken: string | null = null;
+let accessTokenExpiresAt: number | null = null;
+
+function isTokenExpired(): boolean {
+  if (!accessTokenExpiresAt) return false;
+  return Date.now() > accessTokenExpiresAt;
+}
+
+function clearExpiredToken(): void {
+  if (isTokenExpired()) {
+    accessToken = null;
+    accessTokenExpiresAt = null;
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(TOKEN_SESSION_KEY);
+        sessionStorage.removeItem(TOKEN_EXPIRES_AT_KEY);
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }
+}
+
+// Hydrate only from sessionStorage (cleared on tab close), never localStorage
+if (typeof window !== 'undefined') {
+  try {
+    const t = sessionStorage.getItem(TOKEN_SESSION_KEY);
+    const exp = sessionStorage.getItem(TOKEN_EXPIRES_AT_KEY);
+    if (t) {
+      accessToken = t;
+      accessTokenExpiresAt = exp ? Number(exp) : Date.now() + TOKEN_TTL_MS;
+      clearExpiredToken();
+    }
+  } catch {
+    // ignore
+  }
+}
 
 export function setAccessToken(token: string | null): void {
-  accessToken = token;
+  if (token) {
+    accessToken = token;
+    accessTokenExpiresAt = Date.now() + TOKEN_TTL_MS;
+  } else {
+    accessToken = null;
+    accessTokenExpiresAt = null;
+  }
   if (typeof window === 'undefined') {
     return;
   }
-  if (token) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  } else {
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  // Best-effort sessionStorage mirror for reloads within same tab; cleared on tab close
+  try {
+    if (token && accessTokenExpiresAt) {
+      sessionStorage.setItem(TOKEN_SESSION_KEY, token);
+      sessionStorage.setItem(TOKEN_EXPIRES_AT_KEY, String(accessTokenExpiresAt));
+    } else {
+      sessionStorage.removeItem(TOKEN_SESSION_KEY);
+      sessionStorage.removeItem(TOKEN_EXPIRES_AT_KEY);
+      // Defense-in-depth: purge legacy localStorage token if present from older version
+      localStorage.removeItem('google_access_token');
+    }
+  } catch {
+    // ignore storage errors (e.g. blocked third-party storage)
   }
 }
 
 export function getStoredAccessToken(): string | null {
+  clearExpiredToken();
   if (accessToken) {
     return accessToken;
   }
   if (typeof window === 'undefined') {
     return null;
   }
-  accessToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-  return accessToken;
+  try {
+    const t = sessionStorage.getItem(TOKEN_SESSION_KEY);
+    const exp = sessionStorage.getItem(TOKEN_EXPIRES_AT_KEY);
+    if (t) {
+      const expNum = exp ? Number(exp) : 0;
+      if (expNum && Date.now() > expNum) {
+        sessionStorage.removeItem(TOKEN_SESSION_KEY);
+        sessionStorage.removeItem(TOKEN_EXPIRES_AT_KEY);
+        return null;
+      }
+      accessToken = t;
+      accessTokenExpiresAt = expNum || Date.now() + TOKEN_TTL_MS;
+      return accessToken;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function clearStoredAccessToken(): void {
+  setAccessToken(null);
 }
 
 function getFriendlyErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  // LOW-2 fix: generic user-facing messages — no infra details (Vercel/Supabase) leaked
   if (
     message === 'Failed to fetch' ||
     message.toLowerCase().includes('networkerror') ||
     message.toLowerCase().includes('load failed')
   ) {
-    return 'Cannot reach the booking server. Check the Vercel deployment and that SUPABASE_URL is configured.';
+    return 'Cannot reach the booking server. Please try again in a moment.';
+  }
+  if (message.toLowerCase().includes('supabase') || message.toLowerCase().includes('vercel')) {
+    return 'Service temporarily unavailable. Please try again later.';
   }
   return message;
 }
@@ -73,12 +153,13 @@ async function apiCall<T>(action: string, params?: object): Promise<T> {
       body: JSON.stringify(payload),
     });
 
+    // CSRF hardening: require JSON; server also validates Content-Type
     const text = await response.text();
     let result: ApiResponse<T>;
     try {
       result = JSON.parse(text) as ApiResponse<T>;
     } catch {
-      throw new Error('Backend returned an invalid response. Check that the Vercel API and Supabase keys are configured.');
+      throw new Error('Service temporarily unavailable. Please try again later.');
     }
 
     if (!result.success) {

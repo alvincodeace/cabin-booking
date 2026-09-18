@@ -71,6 +71,15 @@ function AppContent() {
     } catch {
       // Still sign out locally if the log write fails.
     }
+    // Revoke token client-side before clearing (best-effort); server also revokes in recordLogout
+    const token = getStoredAccessToken();
+    if (token) {
+      try {
+        await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' });
+      } catch {
+        // ignore
+      }
+    }
     googleLogout();
     setAccessToken(null);
     setUser(null);
