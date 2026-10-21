@@ -71,7 +71,7 @@ export function BookingGroups({ organizerEmail, selectedEmails, onAdd, disabled,
     {busy && <p role="status" className="text-xs text-stone-500">Updating group…</p>}
     {error && <p role="alert" className="text-xs text-red-700">{error} <button type="button" className="underline" disabled={blocked || loading} onClick={load}>Retry loading groups</button></p>}
     {notice && <p role="status" className="text-xs text-teal-800">{notice}</p>}
-    <p className="text-xs text-stone-500">Groups add people to this meeting. You can remove anyone afterward. <Link className="underline" to="/my-groups" target="_blank" rel="noopener noreferrer">Manage groups ↗</Link></p>
+    <p className="text-xs text-stone-500">Groups add people to this meeting. You can remove anyone afterward. <Link className="underline" to="/my-groups">Manage groups</Link></p>
     {selectedEmails.length > 0 && (saving ? <div className="space-y-2">
       <input className="input" aria-label="New group name" maxLength={80} value={name} disabled={blocked} placeholder="Group name" onChange={event => setName(event.target.value)} />
       <div className="flex gap-2"><button type="button" className="btn-secondary text-xs" disabled={blocked || !name.trim() || selectedEmails.length > 500} onClick={save}>Save group</button><button type="button" className="btn-ghost text-xs" disabled={blocked} onClick={() => setSaving(false)}>Cancel</button></div>
