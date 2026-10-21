@@ -132,3 +132,9 @@ export interface AuditLog {
   entityId: string;
   summary: string;
 }
+
+export interface AttendeeGroup {
+  id: string;
+  name: string;
+  memberEmails: string[];
+}

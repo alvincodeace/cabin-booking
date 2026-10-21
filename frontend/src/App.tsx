@@ -7,6 +7,7 @@ import { Header } from './components/Header';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Dashboard } from './pages/Dashboard';
 import { MyBookings } from './pages/MyBookings';
+import { MyGroups } from './pages/MyGroups';
 import { Admin } from './pages/Admin';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -182,6 +183,7 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          <Route path="/my-groups" element={<ProtectedRoute user={user}><MyGroups /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

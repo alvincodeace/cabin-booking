@@ -89,6 +89,7 @@ export function Header({ user, onSignOut }: HeaderProps) {
               <NavLink to="/my-bookings" className={navClass}>
                 My bookings
               </NavLink>
+              <NavLink to="/my-groups" className={navClass}>My groups</NavLink>
               {user.role === 'ADMIN' && (
                 <NavLink to="/admin" className={navClass}>
                   Admin
@@ -169,6 +170,7 @@ export function Header({ user, onSignOut }: HeaderProps) {
                     <Link to="/my-bookings" className="block px-4 py-2 text-sm text-stone-700 hover:bg-stone-50" onClick={() => setShowMenu(false)}>
                       My bookings
                     </Link>
+                    <Link to="/my-groups" className="block px-4 py-2 text-sm text-stone-700 hover:bg-stone-50" onClick={() => setShowMenu(false)}>My groups</Link>
                     {user.role === 'ADMIN' && (
                       <Link to="/admin" className="block px-4 py-2 text-sm text-stone-700 hover:bg-stone-50" onClick={() => setShowMenu(false)}>
                         Admin
