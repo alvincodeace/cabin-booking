@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Cabin, User } from '../types';
 import { confirmBooking, createLock, cancelLock, getCompanyUsers } from '../api/appsScript';
+import { mergeAttendees } from '../utils/groupAttendees';
+import { BookingGroups } from './BookingGroups';
 import { LockCountdown } from './LockCountdown';
 
 interface BookingModalProps {
@@ -31,6 +33,7 @@ export function BookingModal({
   const [members, setMembers] = useState<Pick<User, 'email' | 'name' | 'department'>[]>([]);
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
+  const [groupBusy, setGroupBusy] = useState(false);
 
   useEffect(() => {
     getCompanyUsers()
@@ -153,7 +156,7 @@ export function BookingModal({
           <button
             onClick={handleCancel}
             className="btn-ghost h-9 w-9 text-stone-400"
-            disabled={isLoading}
+            disabled={isLoading || groupBusy}
             aria-label="Close"
           >
             ×
@@ -186,10 +189,12 @@ export function BookingModal({
                   placeholder="Team standup, client call…"
                   className="input min-h-[88px]"
                   rows={3}
-                  disabled={isLoading}
+                  disabled={isLoading || groupBusy}
                 />
               </div>
 
+              <BookingGroups onBusyChange={setGroupBusy} organizerEmail={organizerEmail} selectedEmails={selectedEmails} disabled={isLoading || groupBusy}
+                onAdd={(emails) => setSelectedEmails(current => mergeAttendees(current, emails, organizerEmail))} />
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">
                   Add members
@@ -200,7 +205,7 @@ export function BookingModal({
                   onChange={(e) => setMemberSearch(e.target.value)}
                   placeholder="Search by name or email"
                   className="input mb-2"
-                  disabled={isLoading}
+                  disabled={isLoading || groupBusy}
                 />
                 {selectedEmails.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -210,6 +215,7 @@ export function BookingModal({
                         <button
                           key={email}
                           type="button"
+                          disabled={isLoading || groupBusy}
                           onClick={() => toggleMember(email)}
                           className="px-2.5 py-1 text-xs bg-teal-50 text-teal-900 rounded-full"
                         >
@@ -235,7 +241,7 @@ export function BookingModal({
                             type="checkbox"
                             checked={selectedEmails.includes(member.email)}
                             onChange={() => toggleMember(member.email)}
-                            disabled={isLoading}
+                            disabled={isLoading || groupBusy}
                             className="rounded border-stone-300 text-teal-800 focus:ring-teal-800"
                           />
                           <span>
@@ -263,12 +269,12 @@ export function BookingModal({
             </div>
 
             <div className="flex gap-3">
-              <button onClick={handleCancel} disabled={isLoading} className="btn-secondary flex-1">
+              <button onClick={handleCancel} disabled={isLoading || groupBusy} className="btn-secondary flex-1">
                 Cancel
               </button>
               <button
                 onClick={handleContinue}
-                disabled={isLoading || !purpose.trim()}
+                disabled={isLoading || groupBusy || !purpose.trim()}
                 className="btn-primary flex-1"
               >
                 {isLoading ? 'Holding slot…' : 'Continue'}

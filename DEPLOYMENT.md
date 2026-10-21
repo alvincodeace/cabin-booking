@@ -464,3 +464,26 @@ If something goes wrong:
 _________________
 _________________
 _________________
+
+### Personal attendee groups
+
+Before deploying the groups UI/API, run `supabase/attendee_groups.sql` in the
+Supabase SQL editor against the existing application database. For a fresh setup,
+run `supabase/schema.sql` first, then this migration. The migration is rerunnable.
+It creates private group tables and the service-only `save_attendee_group` function.
+No environment changes or new dependencies are needed. Deploy frontend and API
+changes together after the migration. Existing bookings are unaffected.
+
+Verification: `npm --prefix frontend test` (Node 22.6+),
+`npm --prefix frontend run build`, and `npm --prefix frontend run lint`.
+For database assertions, use a disposable PostgreSQL database with Supabase's
+`anon`, `authenticated`, and `service_role` roles; apply the schema and migration,
+then run `supabase/attendee_groups.test.sql` with `psql -v ON_ERROR_STOP=1`.
+The test file must not be run against production.
+
+Smoke test with two accounts: create a private group, add it to a booking, combine
+overlapping groups, remove one attendee, and confirm that the saved group remains
+unchanged. Check group create/edit/delete and navigation on mobile. The second
+account must not see or modify the first account's groups. Check that inactive
+members are skipped with a notice and individual attendee selection still works
+if the groups request fails.

@@ -336,3 +336,13 @@ export async function recordLogin(): Promise<void> {
 export async function recordLogout(): Promise<void> {
   return apiCall<void>('recordLogout');
 }
+
+export async function getMyGroups(): Promise<import('../types').AttendeeGroup[]> {
+  return apiCall('myGroups');
+}
+export async function saveGroup(name: string, memberEmails: string[], groupId?: string): Promise<import('../types').AttendeeGroup> {
+  return apiCall(groupId ? 'updateGroup' : 'createGroup', { name, memberEmails, groupId });
+}
+export async function deleteGroup(groupId: string): Promise<void> {
+  return apiCall('deleteGroup', { groupId });
+}

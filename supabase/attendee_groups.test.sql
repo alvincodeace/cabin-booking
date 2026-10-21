@@ -1,0 +1,40 @@
+-- Run only against a disposable database after schema.sql and attendee_groups.sql.
+begin;
+insert into users(email, name) values ('group-owner@codeace.com', 'Owner'), ('other-owner@codeace.com', 'Other'), ('member@codeace.com', 'Member');
+insert into users(email, name, active) values ('inactive@codeace.com', 'Inactive', false);
+do $$
+declare r jsonb; gid uuid; other_id uuid;
+begin
+  r := save_attendee_group('group-owner@codeace.com', ' Team ', array['member@codeace.com', 'MEMBER@codeace.com']);
+  assert (r->>'ok')::boolean, 'create failed';
+  gid := (r->>'id')::uuid;
+  assert (select count(*) = 1 from attendee_group_members where group_id = gid), 'duplicate members';
+  r := save_attendee_group('other-owner@codeace.com', 'Team', array['member@codeace.com']);
+  assert (r->>'ok')::boolean, 'different owners may use same name';
+  other_id := (r->>'id')::uuid;
+  r := save_attendee_group('other-owner@codeace.com', 'Hijacked', array['other-owner@codeace.com'], gid);
+  assert not (r->>'ok')::boolean, 'cross-owner edit allowed';
+  assert (select name = 'Team' from attendee_groups where id = gid), 'foreign group mutated';
+  r := save_attendee_group('group-owner@codeace.com', 'Renamed', array['inactive@codeace.com'], gid);
+  assert not (r->>'ok')::boolean, 'inactive user accepted';
+  assert (select name = 'Team' from attendee_groups where id = gid), 'failed edit changed name';
+  assert (select user_email = 'member@codeace.com' from attendee_group_members where group_id = gid), 'failed edit lost membership';
+  r := save_attendee_group('group-owner@codeace.com', 'team', array['member@codeace.com']);
+  assert not (r->>'ok')::boolean, 'duplicate name accepted';
+  r := save_attendee_group('group-owner@codeace.com', 'Empty', array[]::text[]);
+  assert not (r->>'ok')::boolean, 'empty group accepted';
+  r := save_attendee_group('group-owner@codeace.com', 'Updated', array['other-owner@codeace.com'], gid);
+  assert (r->>'ok')::boolean, 'valid update failed';
+  assert (select count(*) = 1 from attendee_group_members where group_id = gid), 'membership replacement failed';
+  assert (select user_email = 'other-owner@codeace.com' from attendee_group_members where group_id = gid), 'membership not replaced';
+  delete from attendee_groups where id = gid and owner_email = 'other-owner@codeace.com';
+  assert exists(select 1 from attendee_groups where id = gid), 'foreign delete removed group';
+  delete from attendee_groups where id = gid and owner_email = 'group-owner@codeace.com';
+  assert not exists(select 1 from attendee_group_members where group_id = gid), 'delete did not cascade';
+  assert exists(select 1 from attendee_groups where id = other_id), 'delete affected another group';
+  assert not has_table_privilege('anon', 'attendee_groups', 'SELECT'), 'anonymous group access';
+  assert not has_table_privilege('authenticated', 'attendee_group_members', 'SELECT'), 'direct member access';
+  assert not has_function_privilege('authenticated', 'save_attendee_group(text,text,text[],uuid)', 'EXECUTE'), 'direct rpc access';
+end;
+$$;
+rollback;

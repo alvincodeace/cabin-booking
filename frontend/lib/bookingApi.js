@@ -1,3 +1,4 @@
+import { handleGroupAction } from './attendeeGroups.js';
 import { createClient } from '@supabase/supabase-js';
 
 const ALLOWED_DOMAIN = 'codeace.com';
@@ -1073,6 +1074,17 @@ export async function handleBookingApi(req, res) {
     }
 
     switch (action) {
+      case 'myGroups':
+      case 'createGroup':
+      case 'updateGroup':
+      case 'deleteGroup': {
+        try {
+          const result = await handleGroupAction(supabase, user, action, payload);
+          return result.success ? ok(res, result.data) : fail(res, 'GROUP_ERROR', result.message);
+        } catch {
+          return fail(res, 'GROUP_ERROR', 'Groups are temporarily unavailable. Please try again.');
+        }
+      }
       case 'currentUser':
         return ok(res, user);
 
