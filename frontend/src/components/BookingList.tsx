@@ -82,8 +82,8 @@ export function BookingList({
     if (booking.status !== 'BOOKED') return false;
     if (user.role === 'ADMIN') return true;
     if (booking.bookedByEmail !== user.email) return false;
-    const bookingDateTime = new Date(`${booking.date}T${booking.startTime}:00+05:30`);
-    return bookingDateTime >= new Date();
+    const bookingEnd = new Date(`${booking.date}T${booking.endTime}:00+05:30`);
+    return bookingEnd > new Date();
   };
 
   const statusClass = (status: string) => {

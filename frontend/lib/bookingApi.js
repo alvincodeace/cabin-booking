@@ -46,9 +46,9 @@ function nowInKolkata() {
   return { date, time: (clock || '').slice(0, 5) };
 }
 
-function isPastSlot(date, startTime) {
+function isPastSlot(date, endTime) {
   const now = nowInKolkata();
-  return date < now.date || (date === now.date && startTime <= now.time);
+  return date < now.date || (date === now.date && endTime <= now.time);
 }
 
 function toIso(value) {
@@ -843,10 +843,12 @@ async function getSettings(supabase) {
 }
 
 function validateBookingDateTime(date, startTime, endTime, settings) {
-  const bookingDateTime = new Date(`${date}T${startTime}:00+05:30`);
-  if (bookingDateTime < new Date()) {
-    return { valid: false, code: 'PAST_BOOKING', message: 'Cannot book in the past' };
+  const bookingEnd = new Date(`${date}T${endTime}:00+05:30`);
+  if (bookingEnd <= new Date()) {
+    return { valid: false, code: 'PAST_BOOKING', message: 'This time slot has already ended' };
   }
+
+  const bookingDateTime = new Date(`${date}T${startTime}:00+05:30`);
 
   const maxAdvance = new Date(Date.now() + settings.advanceBookingDays * 24 * 60 * 60 * 1000);
   if (bookingDateTime > maxAdvance) {
@@ -1160,7 +1162,7 @@ export async function handleBookingApi(req, res) {
               if (overlappingBooking) {
                 slot.status = 'BOOKED';
                 slot.booking = mapBooking(overlappingBooking);
-              } else if (isPastSlot(payload.date, startTime)) {
+              } else if (isPastSlot(payload.date, endTime)) {
                 slot.status = 'DISABLED';
               } else {
                 const overlappingLock = (locks || []).find(
@@ -1308,7 +1310,7 @@ export async function handleBookingApi(req, res) {
           for (let index = 0; index < timeSlots.length - 1; index += 1) {
             const startTime = timeSlots[index];
             const endTime = timeSlots[index + 1];
-            if (isPastSlot(today, startTime)) {
+            if (isPastSlot(today, endTime)) {
               continue;
             }
             const taken = todayBookings.some(
@@ -1506,9 +1508,9 @@ export async function handleBookingApi(req, res) {
           return fail(res, 'UNAUTHORIZED', 'You can only cancel your own bookings');
         }
         if (user.role !== 'ADMIN') {
-          const bookingDateTime = new Date(`${formatDateValue(booking.date)}T${booking.start_time}:00+05:30`);
-          if (bookingDateTime < new Date()) {
-            return fail(res, 'PAST_BOOKING', 'Cannot cancel past bookings');
+          const bookingEnd = new Date(`${formatDateValue(booking.date)}T${booking.end_time}:00+05:30`);
+          if (bookingEnd <= new Date()) {
+            return fail(res, 'PAST_BOOKING', 'Cannot cancel a booking that has already ended');
           }
         }
 

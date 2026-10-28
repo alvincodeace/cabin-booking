@@ -17,11 +17,6 @@ function nowInKolkata() {
   return { date: today, time: (clock || '').slice(0, 5) };
 }
 
-function isPastSlot(date: string, startTime: string) {
-  const now = nowInKolkata();
-  return date < now.date || (date === now.date && startTime <= now.time);
-}
-
 function timeToMinutes(timeStr: string) {
   const [hours, minutes] = String(timeStr).split(':').map(Number);
   return hours * 60 + minutes;
@@ -30,6 +25,11 @@ function timeToMinutes(timeStr: string) {
 function slotEnd(slot: TimeSlot) {
   if (slot.endTime) return slot.endTime;
   return `${String(Math.floor((timeToMinutes(slot.time) + 30) / 60)).padStart(2, '0')}:${String((timeToMinutes(slot.time) + 30) % 60).padStart(2, '0')}`;
+}
+
+function isPastSlot(date: string, endTime: string) {
+  const now = nowInKolkata();
+  return date < now.date || (date === now.date && endTime <= now.time);
 }
 
 export function CabinCard({
@@ -53,7 +53,7 @@ export function CabinCard({
     setRange((current) => {
       if (!current) return current;
       const selected = slots.slice(current.from, current.to + 1);
-      if (selected.some((slot) => cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE' || isPastSlot(date, slot.time))) {
+      if (selected.some((slot) => cabin.status === 'INACTIVE' || slot.status !== 'AVAILABLE' || isPastSlot(date, slotEnd(slot)))) {
         return null;
       }
       return current;
@@ -61,7 +61,7 @@ export function CabinCard({
   }, [slots, date, cabin.status]);
 
   const slotLabel = (slot: TimeSlot) => `${slot.time}–${slotEnd(slot)}`;
-  const slotIsPast = (slot: TimeSlot) => isPastSlot(date, slot.time);
+  const slotIsPast = (slot: TimeSlot) => isPastSlot(date, slotEnd(slot));
   const canAdminCancel = (slot: TimeSlot) =>
     user.role === 'ADMIN' &&
     slot.status === 'BOOKED' &&
